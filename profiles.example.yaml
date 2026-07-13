@@ -1,0 +1,57 @@
+# Local profile dispatcher example. Copy to profiles.yaml and keep real secrets/session ids local.
+default_profile: codex
+
+timeout: 600
+max_output_bytes: 200000
+
+profiles:
+  claude:
+    command:
+      - claude
+      - -p
+      - "{plan}"
+      - --max-turns
+      - "10"
+      - --permission-mode
+      - plan
+    workdir: .
+    timeout: 600
+    max_output_bytes: 200000
+
+  codex:
+    command:
+      - codex
+      - exec
+      - --ephemeral
+      - --sandbox
+      - read-only
+      - --config
+      - "approval_policy='never'"
+      - --skip-git-repo-check
+      - --
+      - "{plan}"
+    workdir: .
+    timeout: 1800
+    max_output_bytes: 200000
+
+  hermes:
+    command:
+      - hermes
+      - --oneshot
+      - "{plan}"
+    workdir: .
+    timeout: 600
+    max_output_bytes: 200000
+
+  reasonix:
+    command:
+      - reasonix
+      - run
+      - --effort
+      - low
+      - --budget
+      - "0.10"
+      - "{plan}"
+    workdir: .
+    timeout: 1800
+    max_output_bytes: 200000

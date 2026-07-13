@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=77.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synaptic-lathe"
+version = "0.1.0"
+description = "Agent message bus for routing tasks and sharing memory, skills, knowledge, and personas"
+readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+keywords = ["agents", "websocket", "fastapi", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "fastapi~=0.138.0",
+    "starlette>=1.3.1,<2.0",
+    "uvicorn[standard]~=0.34.0",
+    "httpx~=0.28.0",
+    "pyyaml~=6.0",
+    "pydantic~=2.10.0",
+    "aiosqlite~=0.20.0",
+    "websockets>=14.0,<17.0",
+    "ruamel.yaml~=0.18.0",
+    "anyio~=4.0",
+]
+
+[project.optional-dependencies]
+embedding = [
+    "sentence-transformers>=2.3.0",
+]
+gemini = [
+    "google-genai>=1.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.8",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
+]
+
+[project.scripts]
+synaptic-server = "synapse.cli:server_cli"
+synaptic-setup = "synapse.setup_wizard:cli"
+synaptic-worker-setup = "synapse.worker_setup:cli"
+synaptic-subprocess-worker = "synapse.agents.subprocess_agent:cli"
+synaptic-codex-worker = "synapse.agents.codex_agent:cli"
+synaptic-profile-worker = "synapse.agents.profile_agent:cli"
+
+[project.urls]
+Homepage = "https://github.com/Loagaeth/synaptic_lathe"
+
+[tool.setuptools.packages.find]
+include = ["synapse*"]
+
+[tool.setuptools.package-data]
+synapse = ["web/index.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
+ignore = [
+    "ASYNC109", # timeout is part of the public task/config API here.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S104"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]

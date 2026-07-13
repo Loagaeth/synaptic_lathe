@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Config with secrets
+config*.yaml
+config*.yml
+!config.example.yaml
+profiles*.yaml
+profiles*.yml
+profiles*.json
+!profiles.example.yaml
+.env
+.env.*
+*.env
+.codex/
+.claude/
+.reasonix/
+auth.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Runtime data and databases
+data/*
+!data/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Embedding models (large files)
+models/
+
+# Test/lint/build cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Logs
+logs/
+*.log
+
+connection_prompt.txt
+.synaptic/
+synapticctl
+synapticctl.cmd
+
+# Atomic write and advisory lock files
+*.tmp
+.*.lock
+
+# sentry
+*.sentry*
+workerctl
+workerctl.cmd
+*.pid
+*.tar.gz
