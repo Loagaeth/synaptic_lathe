@@ -179,6 +179,10 @@ def test_auto_memory_is_opt_in_and_persona_scoped(tmp_path, monkeypatch):
     asyncio.run(server._maybe_condense_memory(config, anonymous, "result"))
     assert len(stored) == 1
 
+    advisory = asyncio.run(create_task(config.db_path, "web-console", "b", "proposal", persona="alice", purpose="bid"))
+    asyncio.run(server._maybe_condense_memory(config, advisory, "self-reported proposal"))
+    assert len(stored) == 1
+
 
 def test_local_embedding_loader_does_not_hold_thread_lock_across_await(monkeypatch):
     from synapse.context import embedding
@@ -521,6 +525,17 @@ def test_dispatch_transition_cannot_overwrite_fast_accept(tmp_path):
     assert asyncio.run(get_task(db_path, task_id))["status"] == "EXECUTING"
 
 
+def test_runner_treats_keyboard_interrupt_as_clean_foreground_shutdown(monkeypatch):
+    from synapse import runner
+
+    def interrupt(coro):
+        coro.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner.asyncio, "run", interrupt)
+    runner.run("config.yaml")
+
+
 def test_task_schema_migration_preserves_existing_rows(tmp_path):
     from synapse.task_queue import get_task, update_task_status
 
@@ -551,6 +566,32 @@ def test_task_schema_migration_preserves_existing_rows(tmp_path):
     assert asyncio.run(update_task_status(str(db_path), "legacy-task", "ABANDONED"))
 
 
+def test_task_schema_migration_adds_abandoned_to_cancelled_only_schema(tmp_path):
+    from synapse.task_queue import get_task, update_task_status
+
+    db_path = tmp_path / "cancelled-only.db"
+    with sqlite3.connect(db_path) as db:
+        db.executescript("""
+            CREATE TABLE tasks (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'CREATED'
+                    CHECK (status IN (
+                        'CREATED','QUEUED','DISPATCHED','EXECUTING',
+                        'COMPLETED','TIMEOUT','ERROR','CANCELLED'
+                    )),
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO tasks (id, type, content, status, created_at)
+            VALUES ('cancelled-era-task', 'send', 'work', 'CREATED', '2026-01-01T00:00:00+00:00');
+        """)
+
+    asyncio.run(init_db(db_path))
+    assert asyncio.run(get_task(str(db_path), "cancelled-era-task"))["content"] == "work"
+    assert asyncio.run(update_task_status(str(db_path), "cancelled-era-task", "ABANDONED"))
+
+
 def test_startup_abandons_nonterminal_tasks(tmp_path):
     from synapse.task_queue import (
         abandon_incomplete_tasks,
@@ -561,7 +602,7 @@ def test_startup_abandons_nonterminal_tasks(tmp_path):
 
     db_path = str(tmp_path / "tasks.db")
     asyncio.run(init_db(db_path))
-    task_id = asyncio.run(create_task(db_path, "source", "target", "work"))
+    task_id = asyncio.run(create_task(db_path, "web-console", "target", "work", source_kind="web"))
     asyncio.run(update_task_status(db_path, task_id, "DISPATCHED"))
 
     assert asyncio.run(abandon_incomplete_tasks(db_path)) == 1

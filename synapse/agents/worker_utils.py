@@ -248,6 +248,24 @@ async def run_worker_message_loop(
             if msg_type == "ping":
                 await ws.send(json.dumps({"type": "pong"}))
                 continue
+            if msg_type == "probe":
+                payload = message.get("payload")
+                probe_id = payload.get("probe_id") if isinstance(payload, Mapping) else ""
+                if isinstance(probe_id, str) and 1 <= len(probe_id) <= 128:
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "probe_ack",
+                                "protocol_version": WS_PROTOCOL_VERSION,
+                                "payload": {
+                                    "probe_id": probe_id,
+                                    "busy": bool(active_task_id),
+                                    "queue_depth": task_queue.qsize(),
+                                },
+                            }
+                        )
+                    )
+                continue
             if msg_type == "cancel":
                 task_id = _message_task_id(message)
                 if not task_id or task_id == active_task_id:

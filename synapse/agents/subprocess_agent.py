@@ -321,7 +321,7 @@ class SubprocessAgent(BaseAgent):
                         "payload": worker_registration_payload(
                             self.agent_name,
                             worker_kind="subprocess_worker",
-                            capabilities=("task", "accept", "chunk", "return", "cancel", "keepalive"),
+                            capabilities=("task", "accept", "chunk", "return", "cancel", "probe", "keepalive"),
                         ),
                     }
                 )

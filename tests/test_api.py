@@ -466,13 +466,24 @@ def test_connection_prompt_stays_concise_and_complete(client):
     assert '"type":"return"' in prompt
     assert "--max-output-bytes" in prompt
     assert "output_truncated" in prompt
+    assert "不可信数据" in prompt
+    assert "广播是瞬时" in prompt
+    assert "不要把记忆或提示词文档当作临时大文件传输层" in prompt
+    assert "超过 2000 字先写入" not in prompt
     assert "<</return>>" in prompt
     assert "<< /return>>" not in prompt
 
 
 def test_web_index_exposes_theme_and_management_controls():
-    html = (Path(__file__).resolve().parents[1] / "synapse" / "web" / "index.html").read_text(encoding="utf-8")
+    web_dir = Path(__file__).resolve().parents[1] / "synapse" / "web"
+    html = (web_dir / "index.html").read_text(encoding="utf-8")
+    css = (web_dir / "styles.css").read_text(encoding="utf-8")
+    javascript = (web_dir / "app.js").read_text(encoding="utf-8")
+    document = html + css + javascript
 
+    assert 'href="/web/styles.css"' in html
+    assert 'src="/web/app.js"' in html
+    html = document
     assert 'body[data-theme="light"]' in html
     assert "toggleTheme()" in html
     assert "searchMemory()" in html
@@ -488,7 +499,12 @@ def test_web_index_exposes_theme_and_management_controls():
     assert "/admin/logs/stream" in html
     assert 'data-tab="logs"' in html
     assert 'data-tab="agents"' in html
+    assert 'data-tab="tasks"' in html
     assert "ragents()" in html
+    assert "/admin/tasks" in html
+    assert "/admin/auctions" in html
+    assert "/admin/teams" in html
+    assert "/admin/agents/probe" in html
     assert "profile_capabilities" in html
     assert "agentCallPayload" in html
     assert "startLogStream()" in html
@@ -980,6 +996,8 @@ def test_setup_wizard_generates_config_and_launcher(tmp_path):
     assert result.installed is False
     assert result.config_created is True
     assert result.generated_api_key == ""
+    assert result.api_key_configured is True
+    assert result.worker_api_key_configured is True
     assert 'host: "0.0.0.0"' in config
     assert "port: 19112" in config
     assert 'api_key: "setup-key"' in config
@@ -1009,9 +1027,34 @@ def test_setup_wizard_auto_generates_api_key(tmp_path):
 
     assert result.generated_api_key
     assert result.generated_worker_api_key
+    assert result.api_key_configured is True
+    assert result.worker_api_key_configured is True
     assert result.generated_api_key in config
     assert result.generated_worker_api_key in config
     assert result.config_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_setup_wizard_cli_reports_explicit_keys_without_disclosing(tmp_path, capsys):
+    from synapse.setup_wizard import cli
+
+    cli(
+        [
+            "--base-dir",
+            str(tmp_path),
+            "--api-key",
+            "explicit-admin-secret",
+            "--worker-api-key",
+            "explicit-worker-secret",
+            "--skip-install",
+            "--yes",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "Admin API key:  configured (not displayed)" in output
+    assert "Worker API key: configured (not displayed)" in output
+    assert "explicit-admin-secret" not in output
+    assert "explicit-worker-secret" not in output
 
 
 def test_setup_wizard_preserves_virtualenv_python_symlink(tmp_path):
@@ -1061,6 +1104,8 @@ def test_worker_setup_generates_profile_launcher(tmp_path):
     assert 'SYNAPTIC_WS_URL="ws://server.example/ws"' in env_file
     assert "synapse.agents.profile_agent" in launcher
     assert "os.execv(PYTHON" in launcher
+    assert "PROJECT_ON_PYTHONPATH = True" in launcher
+    assert "sys.path.insert(0, str(PROJECT_DIR))" in launcher
     assert "--profiles" in launcher
     assert "TITLE =" not in launcher
     assert "codex:" in profiles
@@ -1070,6 +1115,25 @@ def test_worker_setup_generates_profile_launcher(tmp_path):
     assert '      - "--"\n      - "{plan}"' in profiles
     cmd_wrapper = result.cmd_path.read_text(encoding="utf-8")
     assert str(result.runtime_python) in cmd_wrapper
+    compile(launcher, str(result.control_path), "exec")
+
+
+def test_worker_setup_does_not_inject_non_source_project_dir(tmp_path):
+    from synapse.worker_setup import WorkerSetupOptions, run_setup
+
+    project_dir = tmp_path / "not-source"
+    project_dir.mkdir()
+    result = run_setup(
+        WorkerSetupOptions(
+            base_dir=tmp_path / "worker",
+            project_dir=project_dir,
+            install_deps=False,
+            force=True,
+        )
+    )
+
+    launcher = result.control_path.read_text(encoding="utf-8")
+    assert "PROJECT_ON_PYTHONPATH = False" in launcher
     compile(launcher, str(result.control_path), "exec")
 
 
@@ -1586,6 +1650,47 @@ def test_http_agent_call_uses_task_timeout(client):
     assert fake_http.kwargs["headers"] == {"Authorization": "Bearer agent-secret"}
     assert ws.sent[0]["type"] == "task_result"
     assert ws.sent[0]["payload"]["result"] == "ok"
+
+
+def test_http_agent_timeout_uses_timeout_terminal_state(client):
+    from synapse.handlers import handle_http_send
+    from synapse.task_queue import get_task
+
+    class TimeoutHTTPClient:
+        async def post(self, _url, **_kwargs):
+            raise TimeoutError("simulated timeout")
+
+    class FakeWs:
+        def __init__(self, app):
+            self.app = app
+            self.sent = []
+
+        async def send_json(self, message):
+            self.sent.append(message)
+
+    client.app.state.http_client = TimeoutHTTPClient()
+    ws = FakeWs(client.app)
+    agent_cfg = AgentConfig(type="http_api", base_url="http://agent.local")
+    task_id = "http-timeout-state-cid"
+
+    asyncio.run(
+        handle_http_send(
+            client.app.state.config,
+            ws,
+            "caller",
+            "astrbot",
+            "hello",
+            7,
+            task_id,
+            agent_cfg,
+            {},
+        )
+    )
+
+    task = asyncio.run(get_task(client.app.state.config.db_path, task_id))
+    assert task["status"] == "TIMEOUT"
+    assert task["result"] == "HTTP agent call timed out after 7s"
+    assert ws.sent[0]["type"] == "error"
 
 
 def test_server_rejects_non_string_forwarded_task_option():

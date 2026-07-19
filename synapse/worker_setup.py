@@ -124,6 +124,8 @@ profiles:
     workdir: {safe_workdir}
     timeout: 1800
     max_output_bytes: {max_output_bytes}
+    advisory_safe: true
+    tags: [code, review, planning]
 
   hermes:
     command:
@@ -131,6 +133,8 @@ profiles:
     workdir: {safe_workdir}
     timeout: {timeout}
     max_output_bytes: {max_output_bytes}
+    advisory_safe: false
+    tags: [general]
 
   claude:
     command:
@@ -138,6 +142,8 @@ profiles:
     workdir: {safe_workdir}
     timeout: {timeout}
     max_output_bytes: {max_output_bytes}
+    advisory_safe: true
+    tags: [analysis, review, planning]
 
   reasonix:
     command:
@@ -145,6 +151,8 @@ profiles:
     workdir: {safe_workdir}
     timeout: 1800
     max_output_bytes: {max_output_bytes}
+    advisory_safe: false
+    tags: [reasoning]
 """
 
 
@@ -182,11 +190,12 @@ def _read_env_function_source() -> str:
     return r"""
 def _load_env() -> dict[str, str]:
     env = os.environ.copy()
-    project = str(PROJECT_DIR)
-    current_pythonpath = env.get("PYTHONPATH", "")
-    paths = [item for item in current_pythonpath.split(os.pathsep) if item]
-    if project and project not in paths:
-        env["PYTHONPATH"] = project + (os.pathsep + current_pythonpath if current_pythonpath else "")
+    if PROJECT_ON_PYTHONPATH:
+        project = str(PROJECT_DIR)
+        current_pythonpath = env.get("PYTHONPATH", "")
+        paths = [item for item in current_pythonpath.split(os.pathsep) if item]
+        if project and project not in paths:
+            env["PYTHONPATH"] = project + (os.pathsep + current_pythonpath if current_pythonpath else "")
     try:
         lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -219,6 +228,7 @@ def build_control_script(
 ) -> str:
     pid_file = state_dir / "worker.pid"
     stdout_log = log_dir / "synaptic_worker.log"
+    project_on_pythonpath = (project_dir / "synapse" / "__init__.py").is_file()
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
 
@@ -235,6 +245,12 @@ PYTHON = {str(python)!r}
 if os.path.abspath(sys.executable) != os.path.abspath(PYTHON):
     os.execv(PYTHON, [PYTHON, __file__, *sys.argv[1:]])
 
+BASE_DIR = Path({str(base_dir)!r})
+PROJECT_DIR = Path({str(project_dir)!r})
+PROJECT_ON_PYTHONPATH = {project_on_pythonpath!r}
+if PROJECT_ON_PYTHONPATH and str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
 from synapse.file_utils import exclusive_file_lock
 from synapse.process_control import (
     managed_process_running,
@@ -243,8 +259,6 @@ from synapse.process_control import (
     write_process_record,
 )
 
-BASE_DIR = Path({str(base_dir)!r})
-PROJECT_DIR = Path({str(project_dir)!r})
 ENV_FILE = Path({str(env_path)!r})
 PID_FILE = Path({str(pid_file)!r})
 CONTROL_LOCK = PID_FILE.with_suffix(".control.lock")

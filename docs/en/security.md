@@ -10,11 +10,13 @@
 
 The worker key cannot access REST administration endpoints. The administrator key is accepted for WebSocket registration as a super-credential. For compatibility, an empty `worker_api_key` falls back to `api_key`; new deployments should generate two different values. Never commit real keys, `config.yaml`, `profiles.yaml`, `.env`, or CLI credential directories.
 
+The current `worker_api_key` defines a shared message-bus trust domain, not per-Agent credentials. Any holder can register an unused name, send tasks or broadcasts to other Agents, and receive messages addressed to its registered name; it still cannot call REST administration. Put mutually untrusted workers on separate instances, or isolate them with separate OS users, networks, and server keys.
+
 ## Authentication Matrix
 
 - `/health` and `/version`: public and intentionally minimal.
 - `GET /context` and `/context/agents|skills|personas|prompts`: administrator key by default and public when `public_read_context: true`. The two POST search endpoints always require the administrator key to prevent anonymous embedding spend.
-- `/admin/*`, `/connection-prompt`, logs, and debug endpoints: administrator key.
+- `/admin/*` (including tasks, SSE, stats, probes, auctions, and team approval), `/connection-prompt`, logs, and debug endpoints: administrator key.
 - `/ws` and `/api/v1/ws`: worker key; the administrator key is also accepted.
 - The static web page can load without credentials, but it only shows a key-entry panel until authenticated. Backend permissions do not change.
 
@@ -30,10 +32,22 @@ Empty keys are allowed only when explicitly binding to `127.0.0.1`, `localhost`,
 - A source disconnect does not cancel submitted tasks. Results are queued in the current server process and redelivered when the same `agent_name` reconnects. This queue does not survive a server restart.
 - A target disconnect marks its active tasks `ERROR` and reports `TARGET_DISCONNECTED`.
 - Each worker executes tasks sequentially. Its local pending queue is bounded; overload forces a reconnect so the server fails affected tasks explicitly.
+- `probe/probe_ack` is a transient no-side-effect connectivity frame and starts no LLM or child process. Acknowledgement identity comes from the registered connection; late or unknown acknowledgements are discarded.
+- `broadcast` is a transient notification to currently online connections. It is neither durable nor queued offline. The sender name comes from the registered connection, but the payload remains untrusted and must not automatically become an executable task.
+- Human cancellation atomically writes `CANCELLED` and its reason before removing undelivered work, stopping HTTP/timeout jobs, and sending cancellation only to an online target. This prevents cancelled work from running after reconnect.
+
+## Web Tasks and Multi-Agent Coordination
+
+- The browser uses administrator-authenticated HTTP/SSE and never registers as a synthetic Agent. Web results are not queued for a fake `web-console` connection. Static Web assets use a same-origin CSP and do not depend on `unsafe-inline` scripts or styles.
+- Bidding, team planning, and self-assessment only accept profiles declaring `advisory_safe: true`. This is a local capability declaration, not a sandbox. Fixed argv, OS user, workdir, and the tool's read-only mode remain the real enforcement boundary.
+- Bid claims and capability tags are untrusted self-reported display data. Candidate counts, field counts, and text lengths are bounded; the UI HTML-escapes values; none of them affect authentication, authorization, or executable command mapping.
+- Team plans never fan out automatically. Execution tasks are created only after an administrator submits explicit assignments.
+- Group states derived from child tasks are persisted with compare-and-set. A stale GET/list request cannot overwrite a concurrent human selection, approval, or cancellation.
+- Each SSE live fragment is capped at 2048 characters, with bounded subscriber queues and subscriber count. Full output is read from authenticated task detail.
 
 ## Files and Database
 
-File import endpoints only read UTF-8 regular files below project `data/`, up to 500000 bytes. Symlinks are rejected at the data root and in every path component. Database, WAL/SHM, configuration, process state, logs, and worker environment files are made owner-only where supported. Configuration models reject unknown fields, so a misspelled key fails startup instead of silently selecting a default. Run the service as a dedicated OS user.
+File import endpoints only read UTF-8 regular files below project `data/`, up to 500000 bytes. Symlinks are rejected at the data root and in every path component. Database and WAL/SHM permissions are tightened through an opened descriptor after checking file type and ownership, while tolerating SQLite file rotation; configuration, process state, logs, and worker environment files are also made owner-only where supported. Configuration models reject unknown fields, so a misspelled key fails startup instead of silently selecting a default. Run the service as a dedicated OS user.
 
 ## Outbound HTTP
 
@@ -51,4 +65,4 @@ The server never executes a shell. Local capability exists only in separate work
 
 ## Logs
 
-HTTP logs contain method, path, status, duration, and client IP, but not query strings, bodies, or headers. Task logs contain Agent names, task IDs, profile/status fields, and truncation flags, but not plans or output bodies. Common Bearer tokens, `sk-*` keys, assignment/JSON secrets, and URL credentials are redacted before handlers, but redaction is not a substitute for secret management. Log endpoints remain administrator-only.
+HTTP logs contain method, path, status, duration, and client IP, but not query strings, bodies, or headers. Task logs contain Agent names, task IDs, profile/status fields, and truncation flags, but not plans, output bodies, session aliases, or raw session IDs. Common Bearer tokens, `sk-*` keys, assignment/JSON secrets, and URL credentials are redacted before handlers, but redaction is not a substitute for secret management. Log endpoints remain administrator-only.

@@ -57,6 +57,7 @@ DEFAULT_SESSION_PATTERN = r"^[A-Za-z0-9._:@/-]{1,256}$"
 READ_CHUNK_BYTES = 8192
 
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_PROFILE_TAG_RE = re.compile(r"^[A-Za-z0-9_.:+-]{1,32}$")
 _PLACEHOLDER_NAMES = {"plan", "profile", "tool", "session_id", "session_alias", "source"}
 _PLAN_JSON_SELECTOR_KEYS = {"profile", "tool", "session_id", "session", "ssid"}
 _MAX_PROFILES = 64
@@ -167,6 +168,27 @@ def _normalize_string_list(value: Any, label: str) -> list[str]:
     return validate_child_env_names(str(item) for item in value)
 
 
+def _normalize_profile_tags(value: Any, label: str) -> list[str]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or len(value) > 8:
+        raise ProfileConfigError(f"{label} must be a list with at most 8 tags")
+    result = []
+    for raw_tag in value:
+        tag = str(raw_tag)
+        if not _PROFILE_TAG_RE.fullmatch(tag):
+            raise ProfileConfigError(f"{label} contains invalid tag: {tag!r}")
+        if tag not in result:
+            result.append(tag)
+    return result
+
+
+def _normalize_bool(value: Any, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ProfileConfigError(f"{label} must be a boolean")
+    return value
+
+
 def _normalize_env(value: Any, label: str) -> dict[str, str]:
     if value in (None, ""):
         return {}
@@ -269,6 +291,8 @@ def describe_profile_capabilities(profile_config: Mapping[str, Any]) -> dict[str
             "allow_raw_session_id": allow_raw_session_id,
             "plan_delivery": "placeholder" if "plan" in placeholders else "argv_tail",
             "hints": hints,
+            "tags": list(profile.get("tags", [])),
+            "advisory_safe": bool(profile.get("advisory_safe", False)),
         }
     return result
 
@@ -342,9 +366,17 @@ def load_profile_config(path: str, *, global_workdir: str = "", global_pass_env:
             "env": _normalize_env(profile.get("env"), f"profiles.{name}.env"),
             "sessions": _normalize_sessions(profile.get("sessions"), f"profiles.{name}.sessions"),
             "default_session": str(profile.get("default_session") or ""),
-            "allow_raw_session_id": bool(profile.get("allow_raw_session_id", False)),
+            "allow_raw_session_id": _normalize_bool(
+                profile.get("allow_raw_session_id", False),
+                f"profiles.{name}.allow_raw_session_id",
+            ),
             "session_pattern": session_pattern,
             "max_output_bytes": max_output_bytes,
+            "tags": _normalize_profile_tags(profile.get("tags"), f"profiles.{name}.tags"),
+            "advisory_safe": _normalize_bool(
+                profile.get("advisory_safe", False),
+                f"profiles.{name}.advisory_safe",
+            ),
         }
 
     for name, profile in profiles.items():
@@ -653,6 +685,7 @@ class ProfileDispatcherAgent(BaseAgent):
                                 "chunk",
                                 "return",
                                 "cancel",
+                                "probe",
                                 "profile_dispatch",
                                 "keepalive",
                             ),
@@ -870,7 +903,6 @@ class ProfileDispatcherAgent(BaseAgent):
                 "agent": self.agent_name,
                 "task_id": task_id,
                 "profile": result.get("profile"),
-                "session_alias": result.get("session_alias"),
                 "exit_code": result.get("exit_code"),
                 "output_truncated": bool(result.get("output_truncated")),
             },

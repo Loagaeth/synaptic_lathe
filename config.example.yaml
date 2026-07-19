@@ -51,8 +51,9 @@ server:
   ws_receive_timeout: 60
   ws_ping_interval: 30
   pending_message_ttl_hours: 24
+  task_history_hours: 168
 
-  # 0 表示关闭。启用后会按 scope 保存经过截断和基础脱敏的任务摘要。
+  # 0 表示关闭。启用后只按 scope 保存 purpose=execute 且经过截断/脱敏的任务摘要。
   auto_memory_threshold: 0
   auto_memory_max_chars: 4000
 

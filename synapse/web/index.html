@@ -4,30 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SynapticLathe</title>
-<style>
-:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--accent:#58a6ff;--accent-strong:#1f6feb;--text:#c9d1d9;--dim:#8b949e;--danger:#f85149;--green:#3fb950;--warn:#d29922;--input:#0d1117;--soft:rgba(88,166,255,.08);--shadow:0 8px 24px rgba(0,0,0,.18)}
-body[data-theme="light"]{--bg:#f6f8fa;--card:#fff;--border:#d0d7de;--accent:#0969da;--accent-strong:#0550ae;--text:#24292f;--dim:#57606a;--danger:#cf222e;--green:#1a7f37;--warn:#9a6700;--input:#fff;--soft:rgba(9,105,218,.08);--shadow:0 8px 20px rgba(31,35,40,.08)}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;letter-spacing:0}
-nav{width:198px;background:var(--card);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0;overflow-y:auto;display:flex;flex-direction:column}
-nav h2{font-size:14px;color:var(--accent);padding:0 14px 12px;border-bottom:1px solid var(--border);margin-bottom:6px}
-nav a{display:block;padding:7px 14px;color:var(--dim);text-decoration:none;font-size:13px;border-left:3px solid transparent;transition:.15s;cursor:pointer}
-nav a:hover,nav a.active{color:var(--text);background:var(--soft);border-left-color:var(--accent)}
-.nav-actions{margin-top:auto;border-top:1px solid var(--border);padding:10px 12px 0;display:grid;gap:8px}
-.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:1px;background:var(--dim)}
-.dot.online{background:var(--green)}.dot.offline{background:var(--danger)}.dot.warn{background:var(--warn)}
-main{flex:1;overflow-y:auto;padding:24px;display:flex;gap:24px;min-width:0}
-.list{flex:1;min-width:0}.list h3,.form h3{font-size:13px;color:var(--dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}.form h3{color:var(--accent);text-transform:none;letter-spacing:0}
-.item{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:8px;box-shadow:none}.item .name{font-size:14px;color:var(--accent);margin-bottom:4px}.item .name span{font-size:11px;color:var(--dim);margin-left:8px}.item .body{font-size:13px;color:var(--text);white-space:pre-wrap;word-break:break-word}.item .meta{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:8px;font-size:11px;color:var(--dim)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px}.stat{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:12px 14px}.stat strong{display:block;font-size:22px;color:var(--text);line-height:1.2}.stat span{font-size:11px;color:var(--dim)}
-.form{width:330px;flex-shrink:0;position:sticky;top:24px;align-self:flex-start;max-height:calc(100vh - 48px);overflow-y:auto}.form .card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:8px}.form label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px;margin-top:12px}.form label:first-child{margin-top:0}.form input,.form textarea,.form select{width:100%;background:var(--input);border:1px solid var(--border);border-radius:4px;padding:8px 10px;color:var(--text);font:inherit;outline:none}.form input:focus,.form textarea:focus,.form select:focus{border-color:var(--accent)}.form textarea{resize:vertical;min-height:80px}.form select{cursor:pointer}.form .note{font-size:11px;color:var(--dim);margin-top:8px;text-align:center}
-.btn,button{background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:4px;font:inherit;cursor:pointer;font-weight:500;padding:7px 10px}.btn{width:100%;margin-top:12px}.btn:hover,button:hover{background:var(--accent-strong);border-color:var(--accent-strong)}button.secondary,.item .meta button,.toolbar button,.nav-actions button{background:transparent;color:var(--text);border-color:var(--border)}button.secondary:hover,.item .meta button:hover,.toolbar button:hover,.nav-actions button:hover{background:var(--soft);border-color:var(--accent);color:var(--text)}button.danger{color:var(--danger)}button.danger:hover{background:var(--danger);border-color:var(--danger);color:#fff}
-.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.toolbar input,.toolbar select{background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--text);font:inherit;padding:7px 9px;min-width:120px}.toolbar input:focus,.toolbar select:focus{outline:none;border-color:var(--accent)}
-.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}.badge.ok{background:rgba(63,185,80,.15);color:var(--green)}.badge.warn{background:rgba(210,153,34,.15);color:var(--warn)}.badge.err{background:rgba(248,81,73,.15);color:var(--danger)}
-.profile-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;border-top:1px solid var(--border);padding:8px 0}.profile-row:first-child{border-top:0}.profile-row strong{color:var(--text)}.pills{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}.pill{display:inline-block;border:1px solid var(--border);border-radius:999px;padding:1px 7px;font-size:10px;color:var(--dim)}
-.empty{color:var(--dim);text-align:center;padding:40px 0}.muted{color:var(--dim)}.inline-code,#config-preview,#log-output{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.inline-code{font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 4px}#config-preview{font-size:12px;white-space:pre-wrap;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:16px;max-height:calc(100vh - 130px);overflow:auto}#log-output{font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:6px;min-height:360px;max-height:calc(100vh - 150px);overflow:auto}.log-line{padding:7px 10px;border-bottom:1px solid var(--border);white-space:pre-wrap;word-break:break-word}.log-line:last-child{border-bottom:0}.log-meta{color:var(--dim);margin-right:8px}.log-level{display:inline-block;width:54px;font-weight:700}.log-level.info{color:var(--accent)}.log-level.warning{color:var(--warn)}.log-level.error,.log-level.critical{color:var(--danger)}.log-level.debug{color:var(--dim)}.auth-panel{max-width:560px;margin:8vh auto;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:22px;box-shadow:var(--shadow)}.auth-panel h3{color:var(--accent);font-size:18px;margin-bottom:8px}.auth-panel p{color:var(--dim);margin:8px 0}.auth-panel input{width:100%;background:var(--input);border:1px solid var(--border);border-radius:4px;padding:9px 10px;color:var(--text);font:inherit;margin-top:12px}.auth-panel input:focus{outline:none;border-color:var(--accent)}.auth-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.auth-actions button{margin-top:0}.toast{position:fixed;right:18px;bottom:18px;background:var(--card);border:1px solid var(--border);box-shadow:var(--shadow);border-radius:6px;padding:10px 12px;color:var(--text);display:none;max-width:360px}.toast.show{display:block}
-@media(max-width:860px){body{display:block;height:auto;min-height:100vh}nav{width:100%;height:auto;display:block;border-right:0;border-bottom:1px solid var(--border)}nav a{display:inline-block;border-left:0;border-bottom:2px solid transparent}.nav-actions{display:flex;border-top:1px solid var(--border);padding:10px 12px}main{display:block;padding:16px}.form{width:auto;position:static;max-height:none;margin-top:16px}}
-</style>
+<link rel="stylesheet" href="/web/styles.css">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -37,6 +14,7 @@ main{flex:1;overflow-y:auto;padding:24px;display:flex;gap:24px;min-width:0}
   <h2>SynapticLathe</h2>
   <a class="active" data-tab="overview"><span class="dot" id="status-dot"></span>概览</a>
   <a data-tab="agents">Agents</a>
+  <a data-tab="tasks">任务</a>
   <a data-tab="memories">记忆</a>
   <a data-tab="skills">技能</a>
   <a data-tab="knowledge">知识</a>
@@ -46,196 +24,13 @@ main{flex:1;overflow-y:auto;padding:24px;display:flex;gap:24px;min-width:0}
   <a data-tab="prompt">提示词</a>
   <a data-tab="install">安装</a>
   <div class="nav-actions">
-    <button type="button" onclick="toggleTheme()" id="theme-btn">日间模式</button>
-    <button type="button" onclick="logout()">清除认证</button>
+    <button type="button" data-action="toggle-theme" id="theme-btn">日间模式</button>
+    <button type="button" data-action="logout">清除认证</button>
   </div>
 </nav>
 <main id="main"></main>
 <div id="toast" class="toast"></div>
 
-<script>
-const B=window.location.origin;
-let active='overview';
-let copyId=0;
-let copySlots={};
-let deleteId=0;
-let deleteSlots={};
-let logStreamController=null;
-let logReconnectTimer=null;
-let logLines=[];
-const filters={memories:{query:'',persona:'',limit:5,results:null},knowledge:{query:'',persona:'',limit:5,results:null},prompt:{name:'my-agent',type:'http_api'},install:{type:'codex_cli'},logs:{level:'',limit:100,paused:false,autoScroll:true}};
-
-function setTheme(t){document.body.dataset.theme=t;localStorage.setItem('s_theme',t);const b=document.getElementById('theme-btn');if(b)b.textContent=t==='light'?'夜间模式':'日间模式'}
-function toggleTheme(){setTheme(document.body.dataset.theme==='light'?'dark':'light')}
-setTheme(localStorage.getItem('s_theme')||'dark');
-
-document.querySelectorAll('nav a').forEach(a=>a.onclick=()=>{document.querySelectorAll('nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');active=a.dataset.tab;load()});
-
-const AUTH_REQUIRED='__AUTH_REQUIRED__';
-function token(){return sessionStorage.getItem('s_token')||''}
-function authHeaders(){const h={'Content-Type':'application/json'};const k=token();if(k)h.Authorization='Bearer '+k;return h}
-function showAuthRequired(msg='需要 API key 才能访问管理功能。'){
-  stopLogStream();
-  const m=document.getElementById('main');
-  if(!m)return;
-  m.innerHTML=`<div class="auth-panel"><h3>需要认证</h3><p>${e(msg)}</p><p>请在服务端 <span class="inline-code">config.yaml</span> 中查看 <span class="inline-code">server.api_key</span>，然后在本页输入。浏览器只会把 key 保存在当前标签页的 sessionStorage 中。</p><input id="auth-token" type="password" autocomplete="off" placeholder="server.api_key"><div class="auth-actions"><button type="button" onclick="saveAuthToken()">进入管理页</button><button type="button" class="secondary" onclick="location.href='/'">回到根路径</button><button type="button" class="secondary" onclick="refreshHealth().then(()=>notify('健康检查已刷新'))">只检查健康状态</button></div><p class="muted">如果你是部署者且希望公开只读上下文，可配置 <span class="inline-code">server.public_read_context: true</span>；注意这会公开记忆、知识、技能、人设、提示词和 Agent 状态，管理员接口、日志和两个可能触发 embedding 的语义搜索仍然需要认证。</p></div>`;
-  const input=document.getElementById('auth-token');
-  if(input){input.focus();input.onkeydown=e=>{if(e.key==='Enter')saveAuthToken()}}
-}
-function saveAuthToken(){const v=g('auth-token').trim();if(!v){notify('请输入 API key');return}sessionStorage.setItem('s_token',v);notify('已保存到本页会话');load()}
-function askToken(msg='需要 API key 才能访问管理功能。'){showAuthRequired(msg);return ''}
-async function api(m,p,b){
-  const o={method:m,headers:authHeaders()};
-  if(b!==undefined)o.body=JSON.stringify(b);
-  const r=await fetch(B+p,o);
-  if(r.status===401||r.status===403){sessionStorage.removeItem('s_token');showAuthRequired('认证缺失或 API key 不正确。');throw new Error(AUTH_REQUIRED)}
-  if(!r.ok){const text=await r.text();let data={};try{data=JSON.parse(text)}catch(_e){}throw new Error(data.detail?.error||data.error||r.statusText||text)}
-  return r.json();
-}
-function e(s){return s===undefined||s===null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
-function g(id){const el=document.getElementById(id);return el?el.value:''}
-function checked(id){const el=document.getElementById(id);return !!(el&&el.checked)}
-function notify(msg){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show';clearTimeout(notify._t);notify._t=setTimeout(()=>t.className='toast',2600)}
-function logout(){sessionStorage.removeItem('s_token');notify('已清除本页认证');showAuthRequired('已清除认证。需要重新输入 API key 后才能访问管理功能。')}
-async function copyText(text){try{await navigator.clipboard.writeText(text);notify('已复制')}catch(_e){notify('复制失败，请手动选中复制')}}
-async function copyFrom(id){const el=document.getElementById(id);if(el)copyText(el.textContent||el.value||'')}
-function copyButton(text){if(!text)return '';const id='copy-'+(++copyId);copySlots[id]=String(text);return `<button type="button" class="secondary" onclick="copySlotText('${id}')">复制</button>`}
-function copySlotText(id){copyText(copySlots[id]||'')}
-function deleteButton(kind,value){const id='delete-'+(++deleteId);deleteSlots[id]={kind,value:String(value)};return `<button type="button" class="danger" onclick="deleteSlotItem('${id}')">删除</button>`}
-function deleteSlotItem(id){const item=deleteSlots[id];if(item)del(item.kind,item.value)}
-function safeDate(v){return v?new Date(v).toLocaleString():''}
-function safeUnixDate(v){const n=Number(v||0);if(!n)return '';return new Date(n>1000000000000?n:n*1000).toLocaleString()}
-function writeBody(extra={}){const body={...extra};const content=g('f-content').trim();const file=g('f-file').trim();if(content)body.content=content;if(file)body.file=file;return body}
-function scoreBadge(x){return x.score===undefined?'':`<span class="badge ok">score ${e(x.score)}</span>`}
-
-async function refreshHealth(){
-  const dot=document.getElementById('status-dot');
-  try{const r=await fetch(B+'/health?check=db');const h=await r.json();dot.className='dot '+(h.status==='ok'&&h.db==='ok'?'online':'warn');return h}catch(_e){dot.className='dot offline';return {status:'offline',db:'error'}}
-}
-
-async function load(){
-  if(active!=='logs')stopLogStream();
-  const m=document.getElementById('main');
-  m.innerHTML='<div class="empty">加载中...</div>';
-  copyId=0;copySlots={};deleteId=0;deleteSlots={};
-  refreshHealth();
-  try{
-    switch(active){
-      case'overview':m.innerHTML=await roverview();break;
-      case'agents':m.innerHTML=await ragents();break;
-      case'memories':m.innerHTML=await rm();break;
-      case'skills':m.innerHTML=await rs();break;
-      case'knowledge':m.innerHTML=await rk();break;
-      case'personas':m.innerHTML=await rp();break;
-      case'settings':m.innerHTML=await rset();break;
-      case'logs':m.innerHTML=await rlogs();renderLogs();startLogStream();break;
-      case'prompt':m.innerHTML=await rprompt();break;
-      case'install':m.innerHTML=await rinstall();break;
-    }
-  }catch(err){if(err.message!==AUTH_REQUIRED)m.innerHTML=`<div class="empty">错误: ${e(err.message)}</div>`}
-}
-
-function actionButtons(kind,id,copy){return `<span>${copyButton(copy)}</span>${deleteButton(kind,id)}`}
-function renderMemoryItem(x){return `<div class="item"><div class="name">#${e(x.id)} ${scoreBadge(x)}</div><div class="body">${e(x.content)}</div><div class="meta"><span>${e(safeDate(x.created_at))}</span>${actionButtons('memories',x.id,x.content)}</div></div>`}
-function renderKnowledgeItem(x){const title=x.title||String(x.content||'').split('\n')[0]||'知识';return `<div class="item"><div class="name">${e(title)}<span>#${e(x.id)}</span> ${scoreBadge(x)}</div><div class="body">${e(x.content)}</div><div class="meta"><span>${e(safeDate(x.created_at))}</span>${actionButtons('knowledge',x.id,x.content)}</div></div>`}
-function renderTextItem(kind,name,content){return `<div class="item"><div class="name">${e(name)}</div><div class="body">${e(content)}</div><div class="meta">${actionButtons(kind,name,content)}</div></div>`}
-
-async function roverview(){
-  const [h,d]=await Promise.all([refreshHealth(),api('GET','/context')]);
-  const memCount=Array.isArray(d.memories)?d.memories.length:0,skillCount=Array.isArray(d.skills)?d.skills.length:0,knowledgeCount=Array.isArray(d.knowledge)?d.knowledge.length:0,personaCount=Array.isArray(d.personas)?d.personas.length:0,promptCount=Array.isArray(d.prompts)?d.prompts.length:0;
-  const agents=Array.isArray(d.agents?.available)?d.agents.available:[];const onlineCount=agents.filter(x=>x.online).length;
-  return `<div class="list"><h3>系统概览</h3>
-    <div class="grid"><div class="stat"><strong>${memCount}</strong><span>最近记忆</span></div><div class="stat"><strong>${knowledgeCount}</strong><span>最近知识</span></div><div class="stat"><strong>${skillCount}</strong><span>技能</span></div><div class="stat"><strong>${personaCount}</strong><span>人设</span></div><div class="stat"><strong>${promptCount}</strong><span>提示词</span></div><div class="stat"><strong>${onlineCount}/${agents.length}</strong><span>在线 Agent</span></div></div>
-    <div class="item"><div class="name">服务状态 <span class="badge ${h.status==='ok'?'ok':'err'}">${e(h.status)}</span></div><div class="body">HTTP: ${e(h.status)}\nDB: ${e(h.db||'未检查')}\n浏览器页面使用 REST 管理功能；Agent/Worker 仍通过 /ws 长连接互调。</div></div>
-    <h3 style="margin-top:20px">Agent 与协议摘要</h3><div class="item"><pre class="body inline-code" style="display:block;white-space:pre-wrap;background:transparent;border:0;padding:0">${e(d.default_skills||'')}</pre></div>
-    <h3 style="margin-top:20px">API 端点</h3><div class="item"><pre class="body inline-code" style="display:block;white-space:pre-wrap;background:transparent;border:0;padding:0">GET  /health?check=db       健康检查\nGET  /context               完整上下文\nGET  /context/agents        当前可用 Agent\nGET  /context/prompts       提示词文档\nPOST /context/memory        搜索记忆\nPOST /context/knowledge     搜索知识\nPOST /admin/memory          添加记忆\nPOST /admin/skill           添加技能\nPOST /admin/knowledge       添加知识\nPOST /admin/persona         设置人设\nPOST /admin/prompt          设置提示词\nGET  /install/{type}        安装指南\nGET  /admin/logs            最近日志\nGET  /admin/logs/stream     实时日志\nGET  /connection-prompt     连接提示词\nPOST /connection-prompt     连接提示词</pre></div>
-  </div><div class="form"><div class="card"><h3>快速操作</h3><button class="btn" onclick="load()">刷新当前页</button><button class="btn secondary" onclick="active='agents';document.querySelector('[data-tab=agents]').click()">查看 Agent</button><button class="btn secondary" onclick="active='prompt';document.querySelector('[data-tab=prompt]').click()">生成连接提示词</button><button class="btn secondary" onclick="active='install';document.querySelector('[data-tab=install]').click()">查看安装指南</button><p class="note">主题保存在本地浏览器；认证 key 只保存在当前标签页。</p></div></div>`;
-}
-
-async function rm(){
-  const f=filters.memories;const d=await api('GET','/context');const rows=f.results||d.memories||[];const title=f.results?`搜索结果：${e(f.query)}`:'记忆列表';const items=rows.map(renderMemoryItem).join('')||'<div class="empty">暂无记忆</div>';
-  return `<div class="list"><h3>${title}</h3><div class="toolbar"><input id="m-query" placeholder="搜索记忆" value="${e(f.query)}"><input id="m-persona" placeholder="persona" value="${e(f.persona)}"><select id="m-limit"><option ${f.limit==5?'selected':''}>5</option><option ${f.limit==10?'selected':''}>10</option><option ${f.limit==20?'selected':''}>20</option></select><button onclick="searchMemory()">搜索</button><button class="secondary" onclick="clearSearch('memories')">清空</button></div>${items}</div>
-  <div class="form"><div class="card"><h3>添加记忆</h3><label>内容</label><textarea id="f-content" placeholder="记忆内容"></textarea><label>或 data/ 文件路径</label><input id="f-file" placeholder="data/memory.md"><label>Persona</label><input id="f-persona" placeholder="可选"><button class="btn" onclick="submit('memories',writeBody({persona:g('f-persona')}))">添加</button><p class="note">shared 模式下 persona 会由服务端覆盖。</p></div></div>`;
-}
-async function searchMemory(){const f=filters.memories;f.query=g('m-query').trim();f.persona=g('m-persona').trim();f.limit=parseInt(g('m-limit'))||5;if(!f.query){notify('请输入搜索词');return}f.results=await api('POST','/context/memory',{query:f.query,persona:f.persona,limit:f.limit});load()}
-function clearSearch(kind){filters[kind].query='';filters[kind].results=null;load()}
-
-async function rs(){
-  const rows=await api('GET','/context/skills?detail=1');const items=rows.map(s=>renderTextItem('skills',s.name,s.content)).join('')||'<div class="empty">暂无技能</div>';
-  return `<div class="list"><h3>技能列表</h3>${items}</div><div class="form"><div class="card"><h3>添加技能</h3><label>名称</label><input id="f-name" placeholder="技能名称"><label>内容</label><textarea id="f-content" placeholder="技能内容"></textarea><label>或 data/ 文件路径</label><input id="f-file" placeholder="data/skill.md"><button class="btn" onclick="submit('skills',writeBody({name:g('f-name')}))">添加</button></div></div>`;
-}
-
-async function rk(){
-  const f=filters.knowledge;const d=await api('GET','/context');const rows=f.results||d.knowledge||[];const title=f.results?`搜索结果：${e(f.query)}`:'知识列表';const items=rows.map(renderKnowledgeItem).join('')||'<div class="empty">暂无知识</div>';
-  return `<div class="list"><h3>${title}</h3><div class="toolbar"><input id="k-query" placeholder="搜索知识" value="${e(f.query)}"><input id="k-persona" placeholder="persona" value="${e(f.persona)}"><select id="k-limit"><option ${f.limit==5?'selected':''}>5</option><option ${f.limit==10?'selected':''}>10</option><option ${f.limit==20?'selected':''}>20</option></select><button onclick="searchKnowledge()">搜索</button><button class="secondary" onclick="clearSearch('knowledge')">清空</button></div>${items}</div>
-  <div class="form"><div class="card"><h3>添加知识</h3><label>标题</label><input id="f-title" placeholder="标题"><label>内容</label><textarea id="f-content" placeholder="知识内容"></textarea><label>或 data/ 文件路径</label><input id="f-file" placeholder="data/knowledge.md"><label>Persona</label><input id="f-persona" placeholder="可选"><label><input id="f-chunk" type="checkbox" style="width:auto;margin-right:6px">按 Markdown 分块</label><button class="btn" onclick="submit('knowledge',writeBody({title:g('f-title'),persona:g('f-persona')}))">添加</button></div></div>`;
-}
-async function searchKnowledge(){const f=filters.knowledge;f.query=g('k-query').trim();f.persona=g('k-persona').trim();f.limit=parseInt(g('k-limit'))||5;if(!f.query){notify('请输入搜索词');return}f.results=await api('POST','/context/knowledge',{query:f.query,persona:f.persona,limit:f.limit});load()}
-
-async function rp(){
-  const rows=await api('GET','/context/personas?detail=1');const items=rows.map(p=>renderTextItem('personas',p.name,p.content)).join('')||'<div class="empty">暂无人设</div>';
-  return `<div class="list"><h3>人设列表</h3>${items}</div><div class="form"><div class="card"><h3>设置人设</h3><label>名称</label><input id="f-name" placeholder="人设名称"><label>内容</label><textarea id="f-content" placeholder="人设内容"></textarea><label>或 data/ 文件路径</label><input id="f-file" placeholder="data/persona.md"><button class="btn" onclick="submit('personas',writeBody({name:g('f-name')}))">保存</button></div></div>`;
-}
-
-function agentProfiles(a){const c=a.client||{};const caps=(c.profile_capabilities&&typeof c.profile_capabilities==='object')?c.profile_capabilities:{};const raw=Array.isArray(c.profiles)?c.profiles:Object.keys(caps);const names=[...new Set(raw.map(String))].sort();return names.map(n=>Object.assign({name:n},caps[n]||{}))}
-function agentCallPayload(agentName,profile){profile=profile||{};const payload={target:agentName,plan:'执行任务',timeout:Number(profile.suggested_timeout||profile.timeout||600)};if(profile.name)payload.profile=profile.name;const aliases=Array.isArray(profile.session_aliases)?profile.session_aliases:[];if(profile.session_required)payload.session_id=profile.default_session_alias||aliases[0]||'replace-with-session-alias';return {type:'send',payload}}
-function profileHints(p){const hints=Array.isArray(p.hints)?p.hints:[];const out=[];if(p.suggested_timeout||p.timeout)out.push(`timeout ${p.suggested_timeout||p.timeout}s`);if(p.max_output_bytes)out.push(`max ${p.max_output_bytes}B`);if(p.supports_session)out.push('session');if(p.session_required)out.push('requires session');if(hints.includes('avoid_short_timeout'))out.push('avoid 60s');return out}
-function renderProfileRow(a,p){const aliases=Array.isArray(p.session_aliases)?p.session_aliases:[];const aliasText=p.supports_session?(aliases.length?`aliases: ${aliases.join(', ')}`:(p.allow_raw_session_id?'raw session id allowed':'session configured by local worker')):'no session';const pills=profileHints(p).map(x=>`<span class="pill">${e(x)}</span>`).join('');const payload=JSON.stringify(agentCallPayload(a.name,p),null,2);return `<div class="profile-row"><div><strong>${e(p.name)}</strong><div class="pills">${pills}</div><div class="muted">${e(aliasText)} · plan ${e(p.plan_delivery||'argv')}</div></div><div>${copyButton(payload)}</div></div>`}
-function renderAgentItem(a){const profiles=agentProfiles(a);const caps=Array.isArray(a.capabilities)?a.capabilities:[];const client=a.client||{};const badge=a.online?'ok':'warn';const status=a.online?'在线':'配置';const basePayload=JSON.stringify(agentCallPayload(a.name,null),null,2);const profileRows=profiles.length?profiles.map(p=>renderProfileRow(a,p)).join(''):'<div class="muted">未声明 profile 能力。</div>';const capText=caps.length?caps.join(', '):'未声明';return `<div class="item"><div class="name">${e(a.name)} <span class="badge ${badge}">${status}</span><span>${e(a.source||'unknown')}</span></div><div class="body">type: ${e(a.type||'unknown')}
-client: ${e(client.name||'unknown')} ${client.version?`(${e(client.version)})`:''}
-protocol: ${e(a.protocol_version||'')}
-last_seen: ${e(safeUnixDate(a.last_seen))}
-capabilities: ${e(capText)}</div><div class="meta"><span>${profiles.length?`${profiles.length} profiles`:'no profiles'}</span>${copyButton(basePayload)}</div>${profiles.length?`<div style="margin-top:8px">${profileRows}</div>`:''}</div>`}
-async function ragents(){const d=await api('GET','/context/agents');const agents=Array.isArray(d.available)?d.available:[];const online=agents.filter(x=>x.online).length;const items=agents.map(renderAgentItem).join('')||'<div class="empty">暂无 Agent</div>';return `<div class="list"><h3>Agent 管理</h3><div class="grid"><div class="stat"><strong>${online}/${agents.length}</strong><span>在线 Agent</span></div><div class="stat"><strong>${Array.isArray(d.configured)?d.configured.length:0}</strong><span>配置项</span></div><div class="stat"><strong>${Array.isArray(d.online)?d.online.length:0}</strong><span>WebSocket</span></div></div>${items}<h3 style="margin-top:20px">原始数据</h3><pre id="agents-json" class="inline-code" style="display:block;white-space:pre-wrap;background:transparent;border:1px solid var(--border);border-radius:6px;padding:12px">${e(JSON.stringify(d,null,2))}</pre></div><div class="form"><div class="card"><h3>说明</h3><p class="muted">能力声明由 worker 注册时上报。profile 的 timeout、session alias 和输出上限用于指导调用方，不包含本地命令路径、环境变量或真实 session id。</p><button class="btn" onclick="load()">刷新</button><button class="btn secondary" onclick="copyFrom('agents-json')">复制原始 JSON</button><p class="note">调用 reasonix 时优先使用声明的 timeout；未确认轻量配置前不要套用 60 秒。</p></div></div>`}
-
-async function rprompt(){
-  const f=filters.prompt;const [r,docs]=await Promise.all([api('GET',`/connection-prompt?agent_name=${encodeURIComponent(f.name)}&agent_type=${encodeURIComponent(f.type)}`),api('GET','/context/prompts?detail=1')]);
-  const items=docs.map(p=>renderTextItem('prompts',p.name,p.content)).join('')||'<div class="empty">暂无提示词文档</div>';
-  return `<div class="list"><h3>连接提示词</h3><pre id="config-preview">${e(r)}</pre><h3 style="margin-top:20px">提示词文档</h3>${items}</div><div class="form"><div class="card"><h3>参数</h3><label>Agent 名称</label><input id="prompt-name" value="${e(f.name)}"><label>类型</label><select id="prompt-type"><option value="generic" ${f.type==='generic'?'selected':''}>Generic</option><option value="http_api" ${f.type==='http_api'?'selected':''}>HTTP API</option><option value="profile_worker" ${f.type==='profile_worker'?'selected':''}>Profile Worker</option><option value="subprocess_worker" ${f.type==='subprocess_worker'?'selected':''}>Subprocess Worker</option><option value="codex_cli" ${f.type==='codex_cli'?'selected':''}>Codex CLI</option></select><button class="btn" onclick="loadPrompt()">重新生成</button><button class="btn secondary" onclick="copyFrom('config-preview')">复制提示词</button><p class="note">参数只影响本次生成的连接提示词标题、自我标识和示例说明，不会注册或修改 Agent；在线列表以 /context/agents 为准。</p></div><div class="card"><h3>保存提示词文档</h3><label>名称</label><input id="f-name" placeholder="usage-rule"><label>内容</label><textarea id="f-content" placeholder="提示词文档内容"></textarea><label>或 data/ 文件路径</label><input id="f-file" placeholder="data/prompt.md"><button class="btn" onclick="submit('prompts',writeBody({name:g('f-name')}))">保存</button><p class="note">读取：GET /context/prompts?name=usage-rule。</p></div></div>`;
-}
-async function loadPrompt(){filters.prompt.name=g('prompt-name')||'my-agent';filters.prompt.type=g('prompt-type')||'http_api';const r=await api('POST','/connection-prompt',{agent_name:filters.prompt.name,agent_type:filters.prompt.type});document.getElementById('config-preview').textContent=r;notify('已重新生成')}
-
-async function rinstall(){
-  const t=filters.install.type;const r=await api('GET','/install/'+encodeURIComponent(t));const guide=r.guide||{};const body=JSON.stringify(guide,null,2);
-  return `<div class="list"><h3>安装指南</h3><div class="item"><div class="name">${e(r.agent_type)}</div><div class="body"><pre id="install-preview" class="inline-code" style="display:block;white-space:pre-wrap;background:transparent;border:0;padding:0">${e(body)}</pre></div></div></div><div class="form"><div class="card"><h3>类型</h3><label>Agent 类型</label><select id="install-type" onchange="filters.install.type=this.value;load()"><option value="profile_worker" ${t==='profile_worker'?'selected':''}>Profile Worker</option><option value="subprocess_worker" ${t==='subprocess_worker'?'selected':''}>Subprocess Worker</option><option value="codex_cli" ${t==='codex_cli'?'selected':''}>Codex CLI</option><option value="claude_code" ${t==='claude_code'?'selected':''}>Claude Code</option><option value="astrbot_http" ${t==='astrbot_http'?'selected':''}>AstrBot HTTP</option></select><button class="btn secondary" onclick="copyFrom('install-preview')">复制 JSON</button><p class="note">真实密钥只放在本地配置或环境变量。</p></div></div>`;
-}
-
-
-async function rlogs(){
-  const f=filters.logs;const d=await api('GET',`/admin/logs?limit=${encodeURIComponent(f.limit)}`);logLines=Array.isArray(d.logs)?d.logs:[];
-  return `<div class="list"><h3>实时日志</h3><div class="toolbar"><select id="log-level" onchange="filters.logs.level=this.value;renderLogs()"><option value="" ${f.level===''?'selected':''}>全部级别</option><option value="DEBUG" ${f.level==='DEBUG'?'selected':''}>DEBUG</option><option value="INFO" ${f.level==='INFO'?'selected':''}>INFO</option><option value="WARNING" ${f.level==='WARNING'?'selected':''}>WARNING</option><option value="ERROR" ${f.level==='ERROR'?'selected':''}>ERROR</option></select><input id="log-limit" type="number" min="1" max="500" value="${e(f.limit)}" style="width:90px"><button onclick="refreshLogs()">刷新</button><button class="secondary" onclick="toggleLogPause()" id="log-pause">${f.paused?'继续':'暂停'}</button><button class="secondary" onclick="copyVisibleLogs()">复制可见</button><button class="secondary" onclick="clearVisibleLogs()">清空显示</button></div><div id="log-output"></div></div><div class="form"><div class="card"><h3>状态</h3><p class="muted">来源：${e(d.source||'logs/synaptic_lathe.log')}</p><p class="muted">历史文件：${d.exists?'存在':'尚未创建'}</p><p class="muted">实时连接：<span id="log-stream-state" class="badge warn">连接中</span></p><label><input id="log-autoscroll" type="checkbox" style="width:auto;margin-right:6px" ${f.autoScroll?'checked':''} onchange="filters.logs.autoScroll=this.checked">自动滚动到底部</label><p class="note">日志会脱敏 Bearer token 和 sk-* key；HTTP 仅记录 path，不记录 query、请求体或 header。此页需要管理员认证。</p></div></div>`;
-}
-function logLevel(x){return String(x.level||'INFO').toUpperCase()}
-function logMatches(x){return !filters.logs.level||logLevel(x)===filters.logs.level}
-function logMessage(x){return x.msg||x.raw||JSON.stringify(x)}
-function logMetaParts(x){const p=[];if(x.ts)p.push(new Date(x.ts).toLocaleString());if(x.logger)p.push(`logger=${x.logger}`);if(x.event)p.push(`event=${x.event}`);if(x.method&&x.path)p.push(`${x.method} ${x.path}`);if(x.status!==undefined&&x.status!==null)p.push(`status=${x.status}`);if(x.duration_ms!==undefined&&x.duration_ms!==null)p.push(`${x.duration_ms}ms`);if(x.client_ip)p.push(`client=${x.client_ip}`);if(x.agent)p.push(`agent=${x.agent}`);if(x.source)p.push(`source=${x.source}`);if(x.target)p.push(`target=${x.target}`);if(x.task_id)p.push(`task=${x.task_id}`);if(x.profile)p.push(`profile=${x.profile}`);if(x.session_alias)p.push(`session=${x.session_alias}`);if(x.exit_code!==undefined&&x.exit_code!==null)p.push(`exit=${x.exit_code}`);if(x.timeout)p.push(`timeout=${x.timeout}s`);if(x.queued!==undefined)p.push(`queued=${x.queued}`);if(x.output_truncated)p.push('output_truncated');if(x.stderr_truncated)p.push('stderr_truncated');if(x.correlation_id)p.push(`cid=${x.correlation_id}`);return p}
-function renderLogEntry(x){const level=logLevel(x);const meta=logMetaParts(x).join(' ');return `<div class="log-line"><span class="log-level ${e(level.toLowerCase())}">${e(level)}</span><span class="log-meta">${e(meta)}</span><span>${e(logMessage(x))}</span></div>`}
-function renderLogs(){const out=document.getElementById('log-output');if(!out)return;const rows=logLines.filter(logMatches);out.innerHTML=rows.map(renderLogEntry).join('')||'<div class="empty">暂无日志</div>';if(filters.logs.autoScroll)out.scrollTop=out.scrollHeight}
-async function refreshLogs(){filters.logs.limit=Math.max(1,Math.min(500,parseInt(g('log-limit'))||100));const d=await api('GET',`/admin/logs?limit=${encodeURIComponent(filters.logs.limit)}`);logLines=Array.isArray(d.logs)?d.logs:[];renderLogs();startLogStream()}
-function appendLog(x){logLines.push(x);if(logLines.length>1000)logLines=logLines.slice(-1000);if(!filters.logs.paused)renderLogs()}
-function toggleLogPause(){filters.logs.paused=!filters.logs.paused;const b=document.getElementById('log-pause');if(b)b.textContent=filters.logs.paused?'继续':'暂停';if(!filters.logs.paused)renderLogs()}
-function clearVisibleLogs(){logLines=[];renderLogs()}
-function copyVisibleLogs(){const rows=logLines.filter(logMatches).map(x=>`${logLevel(x)} ${logMetaParts(x).join(' ')} ${logMessage(x)}`);copyText(rows.join('\n'))}
-function stopLogStream(){if(logReconnectTimer){clearTimeout(logReconnectTimer);logReconnectTimer=null}if(logStreamController){logStreamController.abort();logStreamController=null}}
-function setLogStreamState(text,kind='warn'){const el=document.getElementById('log-stream-state');if(el){el.className='badge '+kind;el.textContent=text}}
-async function startLogStream(){stopLogStream();if(active!=='logs')return;const ctrl=new AbortController();logStreamController=ctrl;try{const r=await fetch(B+'/admin/logs/stream?limit=0',{headers:authHeaders(),signal:ctrl.signal});if(r.status===401||r.status===403){sessionStorage.removeItem('s_token');showAuthRequired('日志流需要管理员 API key。');throw new Error(AUTH_REQUIRED)}if(!r.ok||!r.body)throw new Error(r.statusText||'日志流不可用');setLogStreamState('已连接','ok');const reader=r.body.getReader();const decoder=new TextDecoder();let buffer='';while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split('\n\n');buffer=events.pop()||'';for(const ev of events){const line=ev.split('\n').find(x=>x.startsWith('data: '));if(!line)continue;try{appendLog(JSON.parse(line.slice(6)))}catch(_e){}}}}catch(err){if(!ctrl.signal.aborted){setLogStreamState('已断开','err');if(err.message!==AUTH_REQUIRED)notify('日志流断开：'+err.message)}}finally{if(logStreamController===ctrl){logStreamController=null;if(active==='logs'&&!ctrl.signal.aborted)logReconnectTimer=setTimeout(()=>{logReconnectTimer=null;startLogStream()},3000)}}}
-
-async function rset(){
-  const [h,r]=await Promise.all([refreshHealth(),api('GET','/admin/config')]);const c=r.config;
-  return `<div class="list"><h3>服务器</h3><div class="item"><div class="name">健康状态 <span class="badge ${h.status==='ok'?'ok':'err'}">${e(h.status)}</span></div><div class="body">DB: ${e(h.db||'未检查')}</div></div><div class="item"><div class="name">监听地址</div><div class="body">${e(c.server.host)}:${e(String(c.server.port))}</div></div><div class="item"><div class="name">CORS</div><div class="body">${e(JSON.stringify(c.server.cors_origins))}</div></div><h3 style="margin-top:20px">记忆</h3><div class="item"><div class="name">隔离模式</div><div class="body">${e(c.memory.scope)}</div></div><div class="item"><div class="name">Embedding 提供商</div><div class="body">${e(c.memory.embedding_provider)}</div></div>${c.memory.embedding_model?`<div class="item"><div class="name">Embedding 模型</div><div class="body">${e(c.memory.embedding_model)}</div></div>`:''}${c.memory.embedding_api_url?`<div class="item"><div class="name">Embedding API</div><div class="body">${e(c.memory.embedding_api_url)}</div></div>`:''}</div>
-  <div class="form"><div class="card"><h3>认证</h3><p class="muted">管理员 key 只能在 config.yaml 中修改。admin: ${c.server.api_key?'已设置':'未设置'}；worker: ${c.server.worker_api_key?'已设置':'回退到 admin key'}</p><button class="btn secondary" onclick="askToken();notify('已更新本页认证')">更新本页认证</button></div><div class="card"><h3>记忆配置</h3><label>隔离模式</label><select id="s-scope"><option value="shared" ${c.memory.scope==='shared'?'selected':''}>共享</option><option value="persona" ${c.memory.scope==='persona'?'selected':''}>人设隔离</option></select><label>Embedding 提供商</label><select id="s-ep"><option value="local" ${c.memory.embedding_provider==='local'?'selected':''}>本地</option><option value="openai" ${c.memory.embedding_provider==='openai'?'selected':''}>OpenAI Compatible</option><option value="gemini" ${c.memory.embedding_provider==='gemini'?'selected':''}>Gemini</option><option value="nvidia" ${c.memory.embedding_provider==='nvidia'?'selected':''}>NVIDIA</option><option value="ollama" ${c.memory.embedding_provider==='ollama'?'selected':''}>Ollama</option></select><label>Embedding 模型</label><input id="s-emodel" value="${e(c.memory.embedding_model||'')}"><label>Embedding API URL</label><input id="s-eurl" value="${e(c.memory.embedding_api_url||'')}"><p class="muted" style="margin-top:8px">Embedding API Key 在 config.yaml 中修改。当前: ${c.memory.embedding_api_key?'已设置':'未设置'}</p><label>向量维度 (0=默认)</label><input id="s-dim" type="number" value="${c.memory.embedding_dimensions||0}"><label>超时(秒)</label><input id="s-timeout" type="number" value="${c.memory.embedding_timeout||20}"><label><input id="s-trust-env" type="checkbox" style="width:auto;margin-right:6px" ${c.memory.embedding_trust_env?'checked':''}>继承服务进程 HTTP(S) proxy 环境</label><button class="btn" onclick="saveConfig()">保存设置</button><p class="note">保存成功后立即用于后续请求；本地模型按需加载。</p></div></div>`;
-}
-
-async function saveConfig(){const data={memory:{scope:g('s-scope'),embedding_provider:g('s-ep'),embedding_model:g('s-emodel'),embedding_api_url:g('s-eurl'),embedding_dimensions:parseInt(g('s-dim'))||0,embedding_timeout:parseInt(g('s-timeout'))||20,embedding_trust_env:checked('s-trust-env')}};await api('POST','/admin/config',data);notify('已保存到 config.yaml');load()}
-async function submit(type,body){
-  if((type==='skills'||type==='personas'||type==='prompts')&&!body.name){notify('名称必填');return}
-  if(type==='knowledge'&&!body.title){notify('标题必填');return}
-  if(!body.content&&!body.file){notify('请填写内容或 data/ 文件路径');return}
-  const maps={memories:'/admin/memory',skills:'/admin/skill',knowledge:'/admin/knowledge',personas:'/admin/persona',prompts:'/admin/prompt'};let url=maps[type];if(type==='knowledge'&&checked('f-chunk'))url+='?chunk=true';await api('POST',url,body);filters.memories.results=null;filters.knowledge.results=null;notify('已保存');load();
-}
-async function del(type,id){if(!confirm('确认删除？'))return;const v=encodeURIComponent(id);const m={memories:`/admin/memory?id=${v}`,skills:`/admin/skill?name=${v}`,knowledge:`/admin/knowledge?id=${v}`,personas:`/admin/persona?name=${v}`,prompts:`/admin/prompt?name=${v}`}[type];if(m){await api('DELETE',m);notify('已删除');load()}}
-
-load();
-</script>
+<script src="/web/app.js"></script>
 </body>
 </html>

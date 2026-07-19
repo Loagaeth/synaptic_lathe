@@ -8,8 +8,9 @@
 4. [Codex Worker](codex.md)
 5. [Security Boundaries](security.md)
 6. [REST API and WebSocket Protocol](api.md)
-7. [Troubleshooting](troubleshooting.md)
+7. [Prompts and Dynamic Agent Discovery](prompts.md)
+8. [Troubleshooting](troubleshooting.md)
 
-SynapticLathe is a single-process Agent message bus. The server handles authentication, routing, task state, SQLite context, and the web UI; local commands run only in separate workers. Built-in integrations include a fixed-command worker, Profile Dispatcher, dedicated Codex CLI worker, and HTTP Agent adapter.
+SynapticLathe is a single-process Agent message bus. The server handles authentication, routing, task state, SQLite context, and the web UI; local commands run only in separate workers. The Web UI can create/cancel human-originated tasks, show invocation counts, broadcast connectivity probes, and run human-gated auctions or team plans. Built-in integrations include a fixed-command worker, Profile Dispatcher, dedicated Codex CLI worker, and HTTP Agent adapter.
 
 中文文档: [../zh/README.md](../zh/README.md)

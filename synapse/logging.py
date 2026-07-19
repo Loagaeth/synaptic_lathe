@@ -78,7 +78,6 @@ SAFE_EXTRA_KEYS = (
     "task_id",
     "connection_id",
     "profile",
-    "session_alias",
     "exit_code",
     "timeout",
     "queued",

@@ -1,7 +1,8 @@
-"""SQLite 数据库初始化与管理。"""
+"""SQLite database initialization and additive schema migrations."""
 
 from __future__ import annotations
 
+import errno
 import os
 import stat
 from collections.abc import AsyncIterator
@@ -10,9 +11,29 @@ from pathlib import Path
 
 import aiosqlite
 
+_TASK_ADDITIONAL_COLUMNS = {
+    "source_agent": "TEXT",
+    "target_agent": "TEXT",
+    "result": "TEXT",
+    "timeout": "INTEGER",
+    "connection_id": "TEXT",
+    "persona": "TEXT",
+    "updated_at": "TEXT",
+    "source_kind": "TEXT NOT NULL DEFAULT 'agent'",
+    "purpose": "TEXT NOT NULL DEFAULT 'execute'",
+    "title": "TEXT NOT NULL DEFAULT ''",
+    "profile": "TEXT NOT NULL DEFAULT ''",
+    "session_alias": "TEXT NOT NULL DEFAULT ''",
+    "group_id": "TEXT NOT NULL DEFAULT ''",
+    "cancel_reason": "TEXT NOT NULL DEFAULT ''",
+    "started_at": "TEXT",
+    "completed_at": "TEXT",
+}
+
 
 def escape_like(value: str) -> str:
-    """转义 SQLite LIKE 通配符 % 和 _。"""
+    """Escape SQLite LIKE wildcards."""
+
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
@@ -43,17 +64,45 @@ def get_db_path(db_path: str | Path) -> Path:
 
 def _secure_database_files(path: Path) -> None:
     for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         try:
-            candidate_stat = candidate.lstat()
+            fd = os.open(candidate, flags)
         except FileNotFoundError:
             continue
-        if stat.S_ISREG(candidate_stat.st_mode) and (not hasattr(os, "getuid") or candidate_stat.st_uid == os.getuid()):
-            os.chmod(candidate, 0o600)
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                continue
+            raise
+        try:
+            candidate_stat = os.fstat(fd)
+            owned = not hasattr(os, "getuid") or candidate_stat.st_uid == os.getuid()
+            if not stat.S_ISREG(candidate_stat.st_mode) or not owned:
+                continue
+            fchmod = getattr(os, "fchmod", None)
+            if fchmod is not None:
+                fchmod(fd, 0o600)
+                continue
+
+            # Windows fallback: re-check identity immediately before path chmod.
+            try:
+                path_stat = candidate.lstat()
+            except FileNotFoundError:
+                continue
+            if (
+                not stat.S_ISLNK(path_stat.st_mode)
+                and stat.S_ISREG(path_stat.st_mode)
+                and (path_stat.st_dev, path_stat.st_ino) == (candidate_stat.st_dev, candidate_stat.st_ino)
+            ):
+                with suppress(FileNotFoundError):
+                    os.chmod(candidate, 0o600)
+        finally:
+            os.close(fd)
 
 
 @asynccontextmanager
 async def get_db(db_path: str | Path) -> AsyncIterator[aiosqlite.Connection]:
-    """获取数据库连接。WAL 模式下每次连接开销可忽略。高并发时考虑连接池。"""
+    """Open one WAL-mode SQLite connection with private database files."""
+
     path = get_db_path(db_path)
     db = await aiosqlite.connect(str(path), timeout=10)
     db.row_factory = aiosqlite.Row
@@ -68,13 +117,21 @@ async def get_db(db_path: str | Path) -> AsyncIterator[aiosqlite.Connection]:
         _secure_database_files(path)
 
 
+async def _ensure_task_columns(db: aiosqlite.Connection) -> None:
+    cur = await db.execute("PRAGMA table_info(tasks)")
+    existing = {str(row["name"]) for row in await cur.fetchall()}
+    for name, definition in _TASK_ADDITIONAL_COLUMNS.items():
+        if name not in existing:
+            await db.execute(f'ALTER TABLE tasks ADD COLUMN "{name}" {definition}')
+
+
 async def _ensure_task_status_schema(db: aiosqlite.Connection) -> None:
-    """Migrate the task status CHECK constraint in one rollback-safe transaction."""
+    """Ensure all terminal task statuses exist without losing task history."""
 
     cur = await db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'")
     row = await cur.fetchone()
     sql = row["sql"] if row else ""
-    if not sql or "ABANDONED" in sql:
+    if not sql or ("CANCELLED" in sql and "ABANDONED" in sql):
         return
 
     await db.execute("PRAGMA foreign_keys=OFF")
@@ -87,32 +144,47 @@ async def _ensure_task_status_schema(db: aiosqlite.Connection) -> None:
                 type TEXT NOT NULL,
                 source_agent TEXT,
                 target_agent TEXT,
+                source_kind TEXT NOT NULL DEFAULT 'agent',
+                purpose TEXT NOT NULL DEFAULT 'execute',
+                title TEXT NOT NULL DEFAULT '',
+                profile TEXT NOT NULL DEFAULT '',
+                session_alias TEXT NOT NULL DEFAULT '',
+                group_id TEXT NOT NULL DEFAULT '',
                 content TEXT NOT NULL,
                 result TEXT,
                 status TEXT NOT NULL DEFAULT 'CREATED'
                     CHECK (status IN (
                         'CREATED','QUEUED','DISPATCHED','EXECUTING',
-                        'COMPLETED','TIMEOUT','ERROR','ABANDONED'
+                        'COMPLETED','TIMEOUT','ERROR','CANCELLED','ABANDONED'
                     )),
                 timeout INTEGER,
                 connection_id TEXT,
                 persona TEXT,
+                cancel_reason TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
-                updated_at TEXT
+                updated_at TEXT,
+                started_at TEXT,
+                completed_at TEXT
             );
             INSERT INTO tasks_new (
-                id, type, source_agent, target_agent, content, result, status,
-                timeout, connection_id, persona, created_at, updated_at
+                id, type, source_agent, target_agent, source_kind, purpose, title,
+                profile, session_alias, group_id, content, result, status, timeout,
+                connection_id, persona, cancel_reason, created_at, updated_at,
+                started_at, completed_at
             )
             SELECT
-                id, type, source_agent, target_agent, content, result, status,
-                timeout, connection_id, persona, created_at, updated_at
+                id, type, source_agent, target_agent, source_kind, purpose, title,
+                profile, session_alias, group_id, content, result, status, timeout,
+                connection_id, persona, cancel_reason, created_at, updated_at,
+                started_at, completed_at
             FROM tasks;
             DROP TABLE tasks;
             ALTER TABLE tasks_new RENAME TO tasks;
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_agent);
             CREATE INDEX IF NOT EXISTS idx_tasks_target ON tasks(target_agent);
+            CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
             COMMIT;
         """)
     except Exception:
@@ -121,6 +193,18 @@ async def _ensure_task_status_schema(db: aiosqlite.Connection) -> None:
         raise
     finally:
         await db.execute("PRAGMA foreign_keys=ON")
+
+
+async def _ensure_task_indexes(db: aiosqlite.Connection) -> None:
+    """Create task indexes after additive legacy-schema migrations."""
+
+    await db.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_agent);
+        CREATE INDEX IF NOT EXISTS idx_tasks_target ON tasks(target_agent);
+        CREATE INDEX IF NOT EXISTS idx_tasks_group ON tasks(group_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
+    """)
 
 
 async def init_db(db_path: str | Path) -> None:
@@ -132,32 +216,62 @@ async def init_db(db_path: str | Path) -> None:
                 type TEXT NOT NULL,
                 source_agent TEXT,
                 target_agent TEXT,
+                source_kind TEXT NOT NULL DEFAULT 'agent',
+                purpose TEXT NOT NULL DEFAULT 'execute',
+                title TEXT NOT NULL DEFAULT '',
+                profile TEXT NOT NULL DEFAULT '',
+                session_alias TEXT NOT NULL DEFAULT '',
+                group_id TEXT NOT NULL DEFAULT '',
                 content TEXT NOT NULL,
                 result TEXT,
                 status TEXT NOT NULL DEFAULT 'CREATED'
                     CHECK (status IN (
                         'CREATED','QUEUED','DISPATCHED','EXECUTING',
-                        'COMPLETED','TIMEOUT','ERROR','ABANDONED'
+                        'COMPLETED','TIMEOUT','ERROR','CANCELLED','ABANDONED'
                     )),
                 timeout INTEGER,
                 connection_id TEXT,
                 persona TEXT,
+                cancel_reason TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
+                started_at TEXT,
+                completed_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS task_groups (
+                id TEXT PRIMARY KEY,
+                mode TEXT NOT NULL,
+                title TEXT NOT NULL,
+                requirement TEXT NOT NULL,
+                status TEXT NOT NULL,
+                selected_task_id TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT
             );
-            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-            CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_agent);
-            CREATE INDEX IF NOT EXISTS idx_tasks_target ON tasks(target_agent);
+            CREATE INDEX IF NOT EXISTS idx_task_groups_created ON task_groups(created_at DESC);
 
-            CREATE TABLE IF NOT EXISTS pending_deliveries (
-                id TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS agent_call_stats (
+                day TEXT NOT NULL,
                 target_agent TEXT NOT NULL,
-                correlation_id TEXT NOT NULL,
-                result_content TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                ttl_hours INTEGER DEFAULT 24
+                profile TEXT NOT NULL DEFAULT '',
+                purpose TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0 CHECK (count >= 0),
+                PRIMARY KEY (day, target_agent, profile, purpose, outcome)
             );
-            CREATE INDEX IF NOT EXISTS idx_pending_target ON pending_deliveries(target_agent);
+
+            CREATE TABLE IF NOT EXISTS agent_profile_tags (
+                agent_name TEXT NOT NULL,
+                profile TEXT NOT NULL,
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                strengths_json TEXT NOT NULL DEFAULT '[]',
+                limitations_json TEXT NOT NULL DEFAULT '[]',
+                suitable_tasks_json TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'configured',
+                updated_at TEXT NOT NULL,
+                expires_at TEXT,
+                PRIMARY KEY (agent_name, profile)
+            );
 
             CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,8 +314,10 @@ async def init_db(db_path: str | Path) -> None:
                 updated_at TEXT
             );
         """)
+            await _ensure_task_columns(db)
             await _ensure_task_status_schema(db)
-            await db.execute("PRAGMA user_version = 4")
+            await _ensure_task_indexes(db)
+            await db.execute("PRAGMA user_version = 7")
             await db.commit()
-    except Exception as e:
-        raise RuntimeError(f"Failed to initialize database at {db_path}: {e}") from e
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize database at {db_path}: {exc}") from exc

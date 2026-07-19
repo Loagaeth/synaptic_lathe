@@ -67,6 +67,8 @@ class SetupResult:
     config_created: bool
     generated_api_key: str
     generated_worker_api_key: str
+    api_key_configured: bool
+    worker_api_key_configured: bool
 
 
 def _bool_text(value: bool) -> str:
@@ -426,6 +428,8 @@ def run_setup(options: SetupOptions) -> SetupResult:
         config_created=config_created,
         generated_api_key=generated_api_key,
         generated_worker_api_key=generated_worker_api_key,
+        api_key_configured=bool(api_key),
+        worker_api_key_configured=bool(worker_api_key),
     )
 
 
@@ -480,11 +484,15 @@ def cli(argv: Sequence[str] | None = None) -> None:
     if result.generated_api_key:
         print(f"Admin API key:  {result.generated_api_key}")
     elif result.config_created:
-        print("Admin API key:  empty")
+        status = "configured (not displayed)" if result.api_key_configured else "empty"
+        print(f"Admin API key:  {status}")
     if result.generated_worker_api_key:
         print(f"Worker API key: {result.generated_worker_api_key}")
     elif result.config_created:
-        print("Worker API key: empty (workers fall back to the admin key)")
+        if result.worker_api_key_configured:
+            print("Worker API key: configured (not displayed)")
+        else:
+            print("Worker API key: empty (workers fall back to the admin key)")
     if result.generated_api_key or result.generated_worker_api_key:
         print("Generated keys are stored in config.yaml; setup prints them only once.")
         print("Empty API key is intended only for local trusted deployments.")

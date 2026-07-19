@@ -61,6 +61,8 @@ SYNAPTIC_API_KEY='<worker-api-key>' python -m synapse.worker_setup \
 
 setup 创建 `.venv`、owner-only `.synaptic/worker.env`、`logs/`、可选 `profiles.yaml` 和 `workerctl`。已有 key 默认保留；`--clear-api-key` 才清空。字符画来自注册成功响应，日志出现 `SynapticLathe ws connected` 表示 WS 已建立并注册。
 
+使用源码目录配合 `--skip-install` 时，生成的 `workerctl` 只在检测到 `synapse/__init__.py` 后把该明确的源码根加入自身 `sys.path` 和子进程 `PYTHONPATH`；普通非源码目录不会被注入。使用 Git URL 安装时应从安装该包的同一 Python 环境运行 setup。
+
 ## 手动启动固定命令
 
 ```bash
@@ -89,6 +91,8 @@ profiles:
     command: ["claude", "-p", "{plan}", "--max-turns", "10", "--permission-mode", "plan"]
     workdir: .
     timeout: 600
+    advisory_safe: true
+    tags: [analysis, review, planning]
 
   codex:
     command:
@@ -104,16 +108,22 @@ profiles:
       - "{plan}"
     workdir: .
     timeout: 1800
+    advisory_safe: true
+    tags: [code, review, planning]
 
   hermes:
     command: ["hermes", "--oneshot", "{plan}"]
     workdir: .
     timeout: 600
+    advisory_safe: false
+    tags: [general]
 
   reasonix:
     command: ["reasonix", "run", "--effort", "low", "--budget", "0.10", "{plan}"]
     workdir: .
     timeout: 1800
+    advisory_safe: false
+    tags: [reasoning]
 ```
 
 启动：
@@ -133,7 +143,9 @@ SYNAPTIC_API_KEY='<worker-api-key>' synaptic-profile-worker \
 
 占位符只支持简单 `{plan}`、`{profile}`、`{tool}`、`{session_id}`、`{session_alias}`、`{source}`；禁止属性访问、索引、格式说明和转换。命令通过 argv 执行，不经过 shell。未使用 `{plan}` 时 worker 自动追加 `--` 和 plan；显式使用 `{plan}` 时，本地 profile 应在位置参数前自行放置 `--`。
 
-`sessions` 保存 alias 到真实 session id 的本地映射。`{session_id}` 和 `{session_alias}` 都会先经过该 allowlist；未使用 session 占位符的 profile 会忽略多余 alias。默认拒绝原始 session id；确需开放时同时设置 `allow_raw_session_id: true` 和无分组/无嵌套量词的字符类 `session_pattern`。能力上报只包含 alias 名，不包含真实值。
+`sessions` 保存 alias 到真实 session id 的本地映射。`{session_id}` 和 `{session_alias}` 都会先经过该 allowlist；未使用 session 占位符的 profile 会忽略多余 alias。默认拒绝原始 session id；确需开放时同时设置 `allow_raw_session_id: true` 和无分组/无嵌套量词的字符类 `session_pattern`。`allow_raw_session_id` 与 `advisory_safe` 必须使用 YAML 真布尔值 `true/false`，写成字符串（例如 `"false"`）会被拒绝，避免权限开关歧义。能力上报只包含 alias 名，不包含真实值。
+
+`tags` 是最多 8 个公开短标签。`advisory_safe: true` 只应标在本地已强制只读、无人工审批且适合提案/规划的 Profile 上；Web 竞拍、团队规划和自评会据此筛选。该声明本身不会改变命令权限，错误标记可导致只读提案运行在可写工具中。Hermes/Reasonix 默认示例保持 `false`，直到用户在本机验证其权限行为。
 
 ## 审批和交互
 

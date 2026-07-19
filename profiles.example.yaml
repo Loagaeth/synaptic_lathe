@@ -17,6 +17,8 @@ profiles:
     workdir: .
     timeout: 600
     max_output_bytes: 200000
+    advisory_safe: true
+    tags: [analysis, review, planning]
 
   codex:
     command:
@@ -33,6 +35,8 @@ profiles:
     workdir: .
     timeout: 1800
     max_output_bytes: 200000
+    advisory_safe: true
+    tags: [code, review, planning]
 
   hermes:
     command:
@@ -42,6 +46,8 @@ profiles:
     workdir: .
     timeout: 600
     max_output_bytes: 200000
+    advisory_safe: false
+    tags: [general]
 
   reasonix:
     command:
@@ -55,3 +61,5 @@ profiles:
     workdir: .
     timeout: 1800
     max_output_bytes: 200000
+    advisory_safe: false
+    tags: [reasoning]

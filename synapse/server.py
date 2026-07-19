@@ -25,6 +25,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from synapse import __version__
+from synapse.agent_catalog import (
+    _available_agent_details,
+    _build_default_skills,
+    build_connection_prompt,
+)
 from synapse.banner import format_banner
 from synapse.config import GlobalConfig, MemoryConfig
 from synapse.connection import connection_manager
@@ -93,7 +98,15 @@ from synapse.protocol import (
 )
 from synapse.router import resolve_target, select_target
 from synapse.session import generate_correlation_id, generate_session_id
-from synapse.task_queue import TaskAlreadyExistsError, create_task, get_task, update_task_status
+from synapse.task_api import create_task_router
+from synapse.task_events import probe_coordinator, task_events
+from synapse.task_management import parse_generated_tags, store_generated_tags
+from synapse.task_queue import (
+    TaskAlreadyExistsError,
+    create_task,
+    get_task,
+    update_task_status,
+)
 from synapse.task_status import (
     ACTIVE_TARGET_TASK_STATUSES,
     COMPLETABLE_TASK_STATUSES,
@@ -101,6 +114,7 @@ from synapse.task_status import (
     TERMINAL_TASK_STATUSES,
 )
 from synapse.text_utils import sanitize_untrusted_text
+from synapse.web_task_controller import WebTaskController
 
 # ── 全局状态 ──────────────────────────────────
 
@@ -604,248 +618,13 @@ def _server_protocol_metadata(config: GlobalConfig) -> dict[str, Any]:
     )
 
 
-def _available_agent_details(config: GlobalConfig) -> dict[str, list[dict[str, Any]]]:
-    configured = [
-        {
-            "name": name,
-            "type": agent.type,
-            "source": "config",
-            "online": connection_manager.is_online(name),
-        }
-        for name, agent in sorted(config.agents.items())
-    ]
-    online = [
-        {
-            "name": item["name"],
-            "type": "websocket",
-            "source": "ws",
-            "online": True,
-            "connection_id": item.get("connection_id"),
-            "connected_at": item.get("connected_at"),
-            "last_seen": item.get("last_seen"),
-            "protocol_version": item.get("protocol_version"),
-            "client": item.get("client", {}),
-            "capabilities": item.get("capabilities", []),
-        }
-        for item in connection_manager.online_agent_details()
-    ]
-
-    merged: dict[str, dict[str, Any]] = {item["name"]: dict(item) for item in configured}
-    for item in online:
-        existing = merged.get(item["name"])
-        if existing:
-            existing.update(
-                {
-                    "online": True,
-                    "source": "config+ws",
-                    "connection_id": item.get("connection_id"),
-                    "connected_at": item.get("connected_at"),
-                    "last_seen": item.get("last_seen"),
-                    "protocol_version": item.get("protocol_version"),
-                    "client": item.get("client", {}),
-                    "capabilities": item.get("capabilities", []),
-                }
-            )
-            continue
-        merged[item["name"]] = dict(item)
-
-    return {
-        "configured": configured,
-        "online": online,
-        "available": [merged[name] for name in sorted(merged)],
-    }
-
-
-def _profile_capability_summary(client: Mapping[str, Any]) -> str:
-    caps = client.get("profile_capabilities")
-    profile_names = client.get("profiles")
-    if not isinstance(caps, dict):
-        caps = {}
-    if isinstance(profile_names, list):
-        names = [str(name) for name in profile_names]
-    else:
-        names = [str(name) for name in caps]
-    if not names:
-        return ""
-
-    parts = []
-    for name in sorted(names)[:6]:
-        meta = caps.get(name, {}) if isinstance(caps.get(name), dict) else {}
-        timeout = meta.get("suggested_timeout") or meta.get("timeout")
-        flags = []
-        if timeout:
-            flags.append(f"timeout={timeout}s")
-        if meta.get("supports_session"):
-            flags.append("session")
-        if "avoid_short_timeout" in (meta.get("hints") or []):
-            flags.append("avoid-60s")
-        suffix = f"({', '.join(flags)})" if flags else ""
-        parts.append(f"{name}{suffix}")
-    if len(names) > 6:
-        parts.append(f"+{len(names) - 6} more")
-    default_profile = client.get("default_profile")
-    prefix = f"default={default_profile}; " if default_profile else ""
-    return f"; profiles: {prefix}{', '.join(parts)}"
-
-
-def _format_available_agents(config: GlobalConfig) -> str:
-    agents = _available_agent_details(config)["available"]
-    if not agents:
-        return "  （无可用 Agent）"
-    lines = []
-    for item in agents:
-        status = "在线" if item.get("online") else "配置"
-        source = item.get("source") or "unknown"
-        client = item.get("client", {}) if isinstance(item.get("client"), dict) else {}
-        profile_summary = _profile_capability_summary(client)
-        lines.append(f"  - {item['name']} ({item.get('type', 'unknown')}; {status}; {source}{profile_summary})")
-    return "\n".join(lines)
-
-
-def build_connection_prompt(
-    config: GlobalConfig,
-    agent_name: str,
-    agent_type: str,
-    base_url: str = "",
-) -> str:
-    if base_url:
-        a = base_url.rstrip("/")
-        ws_base = ("wss://" if a.startswith("https://") else "ws://") + a.split("://", 1)[-1]
-    else:
-        host = config.server.host
-        if host in _PUBLIC_BIND_HOSTS:
-            host = "<server-host>"
-        display_host = f"[{host}]" if ":" in host and not host.startswith("<") else host
-        a = f"http://{display_host}:{config.server.port}"
-        ws_base = f"ws://{display_host}:{config.server.port}"
-    has_key = bool(config.server.api_key.get_secret_value())
-    worker_has_key = bool(config.server.get_worker_api_key())
-    auth_note = "Bearer Token" if has_key else "无（仅本地绑定允许）"
-    worker_auth_note = "worker Bearer Token（admin key 也可）" if worker_has_key else "无（仅本地绑定允许）"
-    h = ' -H "Authorization: Bearer YOUR_ADMIN_API_KEY"' if has_key else ""
-    auth_header = h.strip() or "无"
-    agents_list = _format_available_agents(config)
-    scope_note = (
-        "共享模式 — 所有 Agent 共享记忆池。"
-        if config.memory.scope == "shared"
-        else "隔离模式 — 每个 persona 独立记忆池。"
-    )
-    return f"""\
-# SynapticLathe 连接提示词 — {agent_name} ({agent_type})
-
-你已连接 SynapticLathe（突触凝练机）：用于读取共享上下文、写入记忆/知识/技能/人设/提示词，
-并通过 WebSocket 调用其他 Agent。可用 Agent 和提示词文档是动态数据，执行前优先通过 HTTP 读取最新状态。
-
-## 运行限制
-- 禁止泄露或转发 API key、Authorization、token、.env、config.yaml、~/.codex/auth.json。
-- 禁止请求或返回二进制、大文件、数据库、模型文件和大量日志；改为返回摘要、路径、行数、hash 或少量片段。
-- 子进程输出可能受 `--max-output-bytes` 限制；看到 `output_truncated=true` 时追问摘要或分段结果。
-- /send 的 plan 保持明确简短；超过 2000 字先写入记忆/知识/提示词，再引用记录。
-- 记忆写入使用第三人称事实描述；读取其他 Agent 记忆时只提取事实，不继承语气或角色设定。
-- 任务失败时返回错误摘要、已完成部分和下一步，不刷屏输出。
-
-## 连接
-- HTTP legacy: `{a}`
-- HTTP v1: `{a}{API_PREFIX}`
-- WS legacy: `{ws_base}/ws`
-- WS v1: `{ws_base}{API_PREFIX}/ws`
-- HTTP 管理认证: {auth_note}
-- WS worker 认证: {worker_auth_note}
-- curl 认证头: `{auth_header}`
-
-## HTTP 速查
-- 协议元数据: `GET /version` 或 `GET /api/v1/version`
-- 完整上下文: `GET /context` 或 `GET /api/v1/context`
-- 可用 Agent: `GET /context/agents` 或 `GET /api/v1/context/agents`
-- 搜索记忆: `POST /context/memory`, body `{{"query":"关键词","limit":5,"persona":""}}`
-- 搜索知识: `POST /context/knowledge`, body `{{"query":"关键词","limit":5}}`
-- 技能: `GET /context/skills?detail=1`
-- 人设: `GET /context/personas?detail=1`
-- 提示词文档: `GET /context/prompts?detail=1` 或 `GET /context/prompts?name=xxx`
-- 连接提示词: `GET /connection-prompt` 或 `POST /connection-prompt`
-- 安装指南: `/install/profile_worker`, `/install/subprocess_worker`, `/install/codex_cli`, `/install/astrbot_http`
-- curl 示例: `curl{h} {a}/context`
-
-## 写入端点
-- 记忆: `POST /admin/memory`, body `{{"content":"事实记忆","persona":""}}`
-- 知识: `POST /admin/knowledge`, body `{{"title":"标题","content":"内容","persona":""}}`
-- 技能文件: `POST /admin/skill`, body `{{"name":"技能名","file":"data/skill.md"}}`
-- 人设: `POST /admin/persona`, body `{{"name":"persona","content":"内容"}}`
-- 提示词文档: `POST /admin/prompt`, body `{{"name":"usage-rule","content":"内容"}}`
-- 删除内容: `DELETE /admin/memory?id=1`, `/admin/knowledge?id=1`
-- 删除文档: `DELETE /admin/skill?name=x`, `/admin/persona?name=x`, `/admin/prompt?name=x`
-
-## WebSocket 协议
-- 连接 legacy: `{ws_base}/ws`
-- 连接 v1: `{ws_base}{API_PREFIX}/ws`
-- WS 认证: 启用认证时带 `Authorization: Bearer <worker-api-key>`；管理员 key 也可。
-- 探测: {{"type":"hello"}} 会返回 server/API/WS 协议元数据。
-- 注册: {{"type":"register","payload":{{"agent_name":"你的名字","protocol_version":{WS_PROTOCOL_VERSION}}}}}
-- 注册成功前只发送 hello/register/pong；同名 Agent 在线时新连接会被拒绝。
-- 心跳: 收到 {{"type":"ping"}} 后回复 {{"type":"pong"}}。
-- 发送任务:
-  {{"type":"send","payload":{{"target":"agent_name","plan":"执行指令","timeout":60,"persona":""}}}}
-- 调用 profile dispatcher 时可加: `"profile"/"tool"` 和可选 `"session_id"`，
-  这些只会匹配目标 worker 本地 allowlist。
-- 调用 `reasonix` profile 时不要套用短任务 `timeout:60`；未确认本地轻量配置前建议显式传 `timeout:1800`，
-  因为默认配置可能在首次启动时初始化 MCP。
-- 实时片段: `task_chunk`；最终结果: `task_result`。实时片段只投递给在线来源，不进入离线队列。
-- 结果事件:
-  {{"type":"task_result","payload":{{"task_id":"...","result":"...","output_truncated":false}}}}
-- 接收任务:
-  {{"type":"task","payload":{{"task_id":"...","plan":"...","from":"...","overrides":{{...}}}}}}
-- 接受任务: {{"type":"accept","correlation_id":"任务ID"}}
-- 流式输出: {{"type":"chunk","payload":{{"text":"..."}},"correlation_id":"任务ID"}}
-- 结束标记: `<</return>>`
-- 直接返回:
-  {{"type":"return","payload":{{"task_id":"...","result":"...","output_truncated":false}},"correlation_id":"任务ID"}}
-- 广播:
-  {{"type":"broadcast","payload":{{"data":{{"event":"hello"}}}}}}
-- 常见错误: TIMEOUT, ROUTING_NOT_FOUND, NAME_CONFLICT, NOT_REGISTERED, TARGET_DISCONNECTED, INVALID_REQUEST。
-
-## 可用 Agent（当前快照）
-{agents_list}
-
-执行路由前用 `GET /context/agents` 获取最新在线状态；在线 worker 断开后会从列表中消失。
-
-## 记忆策略
-{scope_note}
-Embedding 可用时优先语义搜索，不可用时自动降级为关键词搜索。
-"""
-
-
-def _build_default_skills(config: GlobalConfig) -> str:
-    agents = _format_available_agents(config).replace("  - ", "- ")
-    scope_note = "当前记忆策略：" + ("共享模式" if config.memory.scope == "shared" else "隔离模式")
-    return f"""## 可用 Agent
-{agents}
-
-提示：这是当前快照。执行路由前可读取 `GET /context/agents`，避免使用已断开的 worker。
-
-## 记忆策略
-{scope_note} — 写入记忆时 persona 字段由服务端根据此策略自动覆盖。
-
-## WebSocket（互调层）
-- 连接: ws://<host>:<port>/ws 或 ws://<host>:<port>/api/v1/ws
-- 探测: 发送 {{"type":"hello"}} 读取协议元数据
-- 注册: 发送 {{"type":"register","payload":{{"agent_name":"你的名字","protocol_version":{WS_PROTOCOL_VERSION}}}}}
-- 注册成功前只发送 hello/register/pong；同名 Agent 在线时新连接会被拒绝。
-- 心跳: 收到 {{"type":"ping"}} 请回复 {{"type":"pong"}}
-- 消息格式: {{"type":"...","payload":{{...}},"correlation_id":"...","timestamp":"..."}}
-- 发送任务: {{"type":"send","payload":{{"target":"agent_name","plan":"指令","timeout":60}}}}
-- Profile worker: payload 可带 `profile`/`tool` 与可选 `session_id`，本地 worker 只执行 allowlist 中的固定命令。
-- Reasonix profile: 未确认本地轻量配置前显式传 `timeout:1800`；不要沿用 60 秒短任务示例。
-- 提示词文档: `GET /context/prompts?name=xxx` 读取，`POST /admin/prompt` 写入。
-- 返回结果: {{"type":"return","payload":{{...}},"correlation_id":"task_id"}}
-"""
-
-
 # ── 记忆自动沉淀与任务可靠性 ──────────────────
 
 
 _persona_interactions: dict[str, tuple[int, float]] = {}
 _timeout_tasks: dict[str, tuple[str, asyncio.Task]] = {}
 _auto_memory_tasks: set[asyncio.Task[None]] = set()
+_web_http_tasks: dict[str, asyncio.Task[None]] = {}
 _ws_connect_attempts: dict[str, deque[float]] = {}
 _ws_connect_rate_lock = asyncio.Lock()
 _MAX_WS_CLIENT_KEYS = 20_000
@@ -902,7 +681,7 @@ async def _maybe_condense_memory(cfg: GlobalConfig, task_id: str, result: str = 
     if threshold <= 0:
         return
     task = await get_task(cfg.db_path, task_id)
-    if not task:
+    if not task or task.get("purpose", "execute") != "execute":
         return
     persona = str(task.get("persona") or "")
     if cfg.memory.scope == "shared":
@@ -990,11 +769,35 @@ async def _complete_task_and_deliver(
     await _cancel_timeout_watcher(task_id)
     if not completed:
         return
-    delivered = await connection_manager.send_or_queue(
-        source_agent,
-        _build_ws_message("task_result", payload, task_id),
-        ttl=_pending_ttl_seconds(cfg),
-    )
+    source_kind = str(task.get("source_kind") or "agent")
+    if source_kind == "web":
+        delivered = True
+        await task_events.publish(
+            {
+                "event": "task_completed",
+                "task_id": task_id,
+                "group_id": task.get("group_id", ""),
+                "status": "COMPLETED",
+                "target": task.get("target_agent", ""),
+                "profile": task.get("profile", ""),
+                "purpose": task.get("purpose", "execute"),
+            }
+        )
+        if task.get("purpose") == "tag":
+            generated = parse_generated_tags(memory_result)
+            if generated:
+                await store_generated_tags(
+                    cfg.db_path,
+                    agent_name=str(task.get("target_agent") or ""),
+                    profile=str(task.get("profile") or ""),
+                    values=generated,
+                )
+    else:
+        delivered = await connection_manager.send_or_queue(
+            source_agent,
+            _build_ws_message("task_result", payload, task_id),
+            ttl=_pending_ttl_seconds(cfg),
+        )
     synapse_logger.info(
         "agent task completed",
         extra={
@@ -1002,6 +805,8 @@ async def _complete_task_and_deliver(
             "source": task.get("source_agent", source_agent),
             "target": task.get("target_agent", ""),
             "task_id": task_id,
+            "profile": task.get("profile", ""),
+            "purpose": task.get("purpose", "execute"),
             "queued": not delivered,
         },
     )
@@ -1033,7 +838,10 @@ async def _fail_tasks_targeting_disconnected_agent(cfg: GlobalConfig, agent_name
 
     async with get_db(cfg.db_path) as db:
         cur = await db.execute(
-            "SELECT id, source_agent FROM tasks WHERE target_agent=? AND status IN (?,?)",
+            """
+            SELECT id, source_agent, source_kind, group_id, profile, purpose
+            FROM tasks WHERE target_agent=? AND status IN (?,?)
+            """,
             (agent_name, *ACTIVE_TARGET_TASK_STATUSES),
         )
         active_tasks = [dict(row) for row in await cur.fetchall()]
@@ -1062,7 +870,19 @@ async def _fail_tasks_targeting_disconnected_agent(cfg: GlobalConfig, agent_name
                 "task_id": task_id,
             },
         )
-        if source_agent:
+        if task.get("source_kind") == "web":
+            await task_events.publish(
+                {
+                    "event": "task_error",
+                    "task_id": task_id,
+                    "group_id": task.get("group_id", ""),
+                    "status": "ERROR",
+                    "target": agent_name,
+                    "profile": task.get("profile", ""),
+                    "purpose": task.get("purpose", "execute"),
+                }
+            )
+        elif source_agent:
             await connection_manager.send_or_queue(
                 source_agent,
                 _build_ws_message(
@@ -1098,23 +918,37 @@ async def _watch_task_timeout(
         if not timed_out:
             return
         _schedule_auto_memory(cfg, task_id, "TIMEOUT")
-        await connection_manager.send_or_queue(
-            source_agent,
-            _build_ws_message(
-                "error",
-                _error_detail(f"Task {task_id} timed out after {timeout_seconds}s", "TIMEOUT"),
-                correlation_id,
-            ),
-            ttl=_pending_ttl_seconds(cfg),
-        )
-        await connection_manager.send_or_queue(
+        task = await get_task(cfg.db_path, task_id)
+        if task and task.get("source_kind") == "web":
+            await task_events.publish(
+                {
+                    "event": "task_timeout",
+                    "task_id": task_id,
+                    "group_id": task.get("group_id", ""),
+                    "status": "TIMEOUT",
+                    "target": target_agent,
+                    "profile": task.get("profile", ""),
+                    "purpose": task.get("purpose", "execute"),
+                }
+            )
+        else:
+            await connection_manager.send_or_queue(
+                source_agent,
+                _build_ws_message(
+                    "error",
+                    _error_detail(f"Task {task_id} timed out after {timeout_seconds}s", "TIMEOUT"),
+                    correlation_id,
+                ),
+                ttl=_pending_ttl_seconds(cfg),
+            )
+        connection_manager.remove_pending_task(target_agent, task_id)
+        await connection_manager.send_if_online(
             target_agent,
             _build_ws_message(
                 "cancel",
                 {"task_id": task_id, "reason": "timeout"},
                 correlation_id,
             ),
-            ttl=_pending_ttl_seconds(cfg),
         )
         synapse_logger.warning(
             "agent task timed out",
@@ -1257,7 +1091,10 @@ async def _task_cleanup_loop(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(21600)
         try:
-            removed = await cleanup_stale_tasks(app.state.config.db_path)
+            removed = await cleanup_stale_tasks(
+                app.state.config.db_path,
+                app.state.config.server.task_history_hours,
+            )
             if removed:
                 synapse_logger.info(
                     "stale tasks removed",
@@ -1295,14 +1132,17 @@ async def lifespan(app: FastAPI):
     finally:
         timeout_watchers = [watcher for _, watcher in _timeout_tasks.values()]
         auto_memory_tasks = list(_auto_memory_tasks)
+        web_http_tasks = list(_web_http_tasks.values())
         _timeout_tasks.clear()
         _auto_memory_tasks.clear()
-        for task in [*background_tasks, *timeout_watchers, *auto_memory_tasks]:
+        _web_http_tasks.clear()
+        for task in [*background_tasks, *timeout_watchers, *auto_memory_tasks, *web_http_tasks]:
             task.cancel()
         await asyncio.gather(
             *background_tasks,
             *timeout_watchers,
             *auto_memory_tasks,
+            *web_http_tasks,
             return_exceptions=True,
         )
         await http_client.aclose()
@@ -1553,7 +1393,19 @@ async def ws_endpoint(ws: WebSocket):
                 expected_statuses=COMPLETABLE_TASK_STATUSES,
             )
             await _cancel_timeout_watcher(cid)
-            if source and failed:
+            if failed and current_task.get("source_kind") == "web":
+                await task_events.publish(
+                    {
+                        "event": "task_error",
+                        "task_id": cid,
+                        "group_id": current_task.get("group_id", ""),
+                        "status": "ERROR",
+                        "target": current_task.get("target_agent", agent_name),
+                        "profile": current_task.get("profile", ""),
+                        "purpose": current_task.get("purpose", "execute"),
+                    }
+                )
+            elif source and failed:
                 await connection_manager.send_or_queue(
                     source,
                     _build_ws_message(
@@ -1570,7 +1422,20 @@ async def ws_endpoint(ws: WebSocket):
         streamed_result_parts.append(content)
         streamed_result_bytes += encoded_size
         source = str(current_task.get("source_agent") or "")
-        if source:
+        if current_task.get("source_kind") == "web":
+            await task_events.publish(
+                {
+                    "event": "task_chunk",
+                    "task_id": cid,
+                    "group_id": current_task.get("group_id", ""),
+                    "status": current_task.get("status", "EXECUTING"),
+                    "target": current_task.get("target_agent", agent_name),
+                    "profile": current_task.get("profile", ""),
+                    "purpose": current_task.get("purpose", "execute"),
+                    "text": content,
+                }
+            )
+        elif source:
             await connection_manager.send_if_online(
                 source,
                 _build_ws_message("task_chunk", {"task_id": cid, "text": content}, cid),
@@ -1744,6 +1609,11 @@ async def ws_endpoint(ws: WebSocket):
                 )
                 continue
 
+            if msg_type == "probe_ack":
+                # Late acknowledgements are harmless and may arrive after the HTTP probe timeout.
+                probe_coordinator.record(agent_name, payload)
+                continue
+
             # ── /send 路由 ──
             if msg_type == "send":
                 requested_target = payload.get("target", "")
@@ -1819,6 +1689,12 @@ async def ws_endpoint(ws: WebSocket):
                         timeout=timeout,
                         persona=persona,
                         correlation_id=cid,
+                        profile=forwarded_options.get("profile") or forwarded_options.get("tool", ""),
+                        session_alias=(
+                            forwarded_options.get("session_id")
+                            or forwarded_options.get("session")
+                            or forwarded_options.get("ssid", "")
+                        ),
                     )
                 except TaskAlreadyExistsError:
                     await _send_ws_error(ws, "Task correlation_id already exists", "DUPLICATE_TASK_ID", cid)
@@ -1912,6 +1788,18 @@ async def ws_endpoint(ws: WebSocket):
                 current_task = task
                 current_task["status"] = "EXECUTING"
                 reset_stream()
+                if task.get("source_kind") == "web":
+                    await task_events.publish(
+                        {
+                            "event": "task_executing",
+                            "task_id": cid,
+                            "group_id": task.get("group_id", ""),
+                            "status": "EXECUTING",
+                            "target": agent_name,
+                            "profile": task.get("profile", ""),
+                            "purpose": task.get("purpose", "execute"),
+                        }
+                    )
                 synapse_logger.info(
                     "agent task accepted",
                     extra={"event": "agent_task_accepted", "agent": agent_name, "task_id": cid},
@@ -1977,7 +1865,19 @@ async def ws_endpoint(ws: WebSocket):
                         expected_statuses=COMPLETABLE_TASK_STATUSES,
                     )
                     await _cancel_timeout_watcher(cid)
-                    if source and failed:
+                    if failed and task.get("source_kind") == "web":
+                        await task_events.publish(
+                            {
+                                "event": "task_error",
+                                "task_id": cid,
+                                "group_id": task.get("group_id", ""),
+                                "status": "ERROR",
+                                "target": task.get("target_agent", agent_name),
+                                "profile": task.get("profile", ""),
+                                "purpose": task.get("purpose", "execute"),
+                            }
+                        )
+                    elif source and failed:
                         await connection_manager.send_or_queue(
                             source,
                             _build_ws_message(
@@ -2003,7 +1903,6 @@ async def ws_endpoint(ws: WebSocket):
                         "source": source,
                         "task_id": cid,
                         "profile": result_payload.get("profile"),
-                        "session_alias": result_payload.get("session_alias"),
                         "exit_code": result_payload.get("exit_code"),
                         "output_truncated": bool(result_payload.get("output_truncated")),
                         "stderr_truncated": bool(result_payload.get("stderr_truncated")),
@@ -2327,6 +2226,7 @@ async def admin_get_config(request: Request, _token: str = Depends(verify_token)
                 "ws_receive_timeout": cfg.server.ws_receive_timeout,
                 "ws_ping_interval": cfg.server.ws_ping_interval,
                 "pending_message_ttl_hours": cfg.server.pending_message_ttl_hours,
+                "task_history_hours": cfg.server.task_history_hours,
                 "auto_memory_threshold": cfg.server.auto_memory_threshold,
                 "auto_memory_max_chars": cfg.server.auto_memory_max_chars,
             },
@@ -2419,6 +2319,29 @@ def _register_api_v1_aliases() -> None:
 
 
 _register_api_v1_aliases()
+
+_web_task_controller = WebTaskController(
+    task_persona=_task_persona,
+    bounded_timeout=_bounded_timeout,
+    build_ws_message=_build_ws_message,
+    error_detail=_error_detail,
+    pending_ttl_seconds=_pending_ttl_seconds,
+    watch_task_timeout=_watch_task_timeout,
+    cancel_timeout_watcher=_cancel_timeout_watcher,
+    available_agent_details=_available_agent_details,
+    timeout_tasks=_timeout_tasks,
+    http_tasks=_web_http_tasks,
+)
+_task_admin_router = create_task_router(
+    verify_token,
+    dispatch_task=_web_task_controller.dispatch_task,
+    cancel_task=_web_task_controller.cancel_task,
+    probe_agents=_web_task_controller.probe_agents,
+    resolve_endpoint=_web_task_controller.resolve_endpoint,
+    agent_details=_web_task_controller.agent_details,
+)
+app.include_router(_task_admin_router)
+app.include_router(_task_admin_router, prefix=API_PREFIX)
 
 
 # ── 服务器启动 ────────────────────────────────

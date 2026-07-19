@@ -409,7 +409,7 @@ class CodexAgent(BaseAgent):
                         "payload": worker_registration_payload(
                             self.agent_name,
                             worker_kind="codex_worker",
-                            capabilities=("task", "accept", "return", "cancel", "codex_exec", "keepalive"),
+                            capabilities=("task", "accept", "return", "cancel", "probe", "codex_exec", "keepalive"),
                             extra_client_fields={
                                 "sandbox": self.settings.get("sandbox"),
                                 "approval_policy": self.settings.get("approval_policy"),

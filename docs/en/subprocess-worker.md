@@ -61,6 +61,8 @@ SYNAPTIC_API_KEY='<worker-api-key>' python -m synapse.worker_setup \
 
 Setup creates `.venv`, owner-only `.synaptic/worker.env`, logs, optional `profiles.yaml`, and `workerctl`. Existing keys are preserved; only `--clear-api-key` removes one. `SynapticLathe ws connected` in the log means registration succeeded.
 
+With a source checkout and `--skip-install`, generated `workerctl` adds the explicit source root to its own `sys.path` and the child `PYTHONPATH` only when `synapse/__init__.py` is present. An ordinary non-source directory is not injected. For a Git URL installation, run setup from the same Python environment where the package was installed.
+
 ## Manual Fixed Command
 
 ```bash
@@ -89,6 +91,8 @@ profiles:
     command: ["claude", "-p", "{plan}", "--max-turns", "10", "--permission-mode", "plan"]
     workdir: .
     timeout: 600
+    advisory_safe: true
+    tags: [analysis, review, planning]
 
   codex:
     command:
@@ -104,16 +108,22 @@ profiles:
       - "{plan}"
     workdir: .
     timeout: 1800
+    advisory_safe: true
+    tags: [code, review, planning]
 
   hermes:
     command: ["hermes", "--oneshot", "{plan}"]
     workdir: .
     timeout: 600
+    advisory_safe: false
+    tags: [general]
 
   reasonix:
     command: ["reasonix", "run", "--effort", "low", "--budget", "0.10", "{plan}"]
     workdir: .
     timeout: 1800
+    advisory_safe: false
+    tags: [reasoning]
 ```
 
 Start it:
@@ -133,7 +143,9 @@ The caller sends only profile, plan, optional session alias, and timeout:
 
 Only simple `{plan}`, `{profile}`, `{tool}`, `{session_id}`, `{session_alias}`, and `{source}` placeholders are allowed. Attribute/index access, format specifications, and conversions are rejected. Commands run as argv without a shell. If `{plan}` is absent, the worker appends `--` and the plan; an explicit positional `{plan}` should be preceded by `--` in the local profile.
 
-A local `sessions` table maps aliases to real session IDs. Both `{session_id}` and `{session_alias}` pass through this allowlist; profiles without session placeholders ignore an extra alias. Raw IDs are denied by default; enabling them requires `allow_raw_session_id: true` and a bounded character-class `session_pattern` without groups or nested quantifiers. Capability metadata contains alias names, not real values.
+A local `sessions` table maps aliases to real session IDs. Both `{session_id}` and `{session_alias}` pass through this allowlist; profiles without session placeholders ignore an extra alias. Raw IDs are denied by default; enabling them requires `allow_raw_session_id: true` and a bounded character-class `session_pattern` without groups or nested quantifiers. `allow_raw_session_id` and `advisory_safe` must be real YAML booleans (`true`/`false`); quoted values such as `"false"` are rejected to avoid ambiguous permission switches. Capability metadata contains alias names, not real values.
+
+`tags` contains at most eight public short labels. Set `advisory_safe: true` only when the local profile is already enforced read-only, non-interactive, and suitable for proposals/planning; Web auctions, team planning, and self-assessment filter on this field. The declaration does not change command privileges. Hermes/Reasonix remain `false` by default until their local permission behavior is verified.
 
 ## Approval and Interaction
 

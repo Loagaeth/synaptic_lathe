@@ -10,6 +10,7 @@ import json
 import time
 from datetime import UTC, datetime
 
+import httpx
 from fastapi import HTTPException, Request
 
 from synapse.config import GlobalConfig
@@ -29,7 +30,7 @@ _PROFILE_WORKER_GUIDE = {
     "note": (
         "The package install above supplies the runtime; setup creates an owner-only worker.env "
         "and an allowlisted profiles.yaml. "
-        "Review command paths before starting ./synaptic-worker/synaptic-workerctl."
+        "Review command paths before starting ./synaptic-worker/workerctl."
     ),
 }
 
@@ -104,7 +105,17 @@ def _ensure_message_fits(message: dict, max_bytes: int) -> None:
         raise AgentResponseTooLargeError("HTTP agent response exceeded max_body_bytes")
 
 
-async def _deliver_to_source(ws, source: str, message: dict, ttl: float) -> None:
+async def _deliver_to_source(
+    ws,
+    source: str,
+    message: dict,
+    ttl: float,
+    *,
+    source_kind: str = "agent",
+) -> None:
+    if source_kind == "web":
+        await ws.send_json(message)
+        return
     if connection_manager.is_online(source):
         await connection_manager.send_or_queue(source, message, ttl=ttl)
         return
@@ -141,6 +152,13 @@ async def handle_http_send(
     payload: dict,
     *,
     persona: str = "",
+    source_kind: str = "agent",
+    purpose: str = "execute",
+    title: str = "",
+    profile: str = "",
+    session_alias: str = "",
+    group_id: str = "",
+    precreated: bool = False,
 ) -> None:
     """Call one configured HTTP agent and return a bounded result to the source."""
 
@@ -172,16 +190,27 @@ async def handle_http_send(
     from synapse.task_queue import create_task as _create
     from synapse.task_queue import update_task_status as _update
 
-    task_id = await _create(
-        cfg.db_path,
-        source,
-        target,
-        plan,
-        timeout=timeout,
-        persona=persona,
-        correlation_id=cid,
-    )
-    await _update(cfg.db_path, task_id, "DISPATCHED", expected_statuses=("CREATED",))
+    if precreated:
+        task_id = cid
+    else:
+        task_id = await _create(
+            cfg.db_path,
+            source,
+            target,
+            plan,
+            timeout=timeout,
+            persona=persona,
+            correlation_id=cid,
+            source_kind=source_kind,
+            purpose=purpose,
+            title=title,
+            profile=profile,
+            session_alias=session_alias,
+            group_id=group_id,
+        )
+    dispatched = await _update(cfg.db_path, task_id, "DISPATCHED", expected_statuses=("CREATED",))
+    if not dispatched:
+        return
     started = time.perf_counter()
     status: int | None = None
     synapse_logger.info(
@@ -222,13 +251,15 @@ async def handle_http_send(
         )
         _ensure_message_fits(result_message, cfg.server.max_body_bytes)
 
-        await _update(
+        completed = await _update(
             cfg.db_path,
             task_id,
             "COMPLETED",
             result=result,
             expected_statuses=("DISPATCHED",),
         )
+        if not completed:
+            return
         synapse_logger.info(
             "http agent call completed",
             extra={
@@ -245,25 +276,30 @@ async def handle_http_send(
             source,
             result_message,
             cfg.server.pending_message_ttl_hours * 3600,
+            source_kind=source_kind,
         )
     except Exception as exc:
-        public_error = "HTTP agent call failed"
-        if status is not None:
+        timed_out = isinstance(exc, (httpx.TimeoutException, TimeoutError))
+        terminal_status = "TIMEOUT" if timed_out else "ERROR"
+        public_error = f"HTTP agent call timed out after {timeout}s" if timed_out else "HTTP agent call failed"
+        if status is not None and not timed_out:
             public_error += f" with status {status}"
         if isinstance(exc, AgentResponseTooLargeError):
             public_error = str(exc)
-        await _update(
+        failed = await _update(
             cfg.db_path,
             task_id,
-            "ERROR",
+            terminal_status,
             result=public_error,
             expected_statuses=("DISPATCHED",),
         )
+        if not failed:
+            return
         synapse_logger.warning(
-            "http agent call failed",
+            "http agent call timed out" if timed_out else "http agent call failed",
             exc_info=True,
             extra={
-                "event": "http_agent_call_failed",
+                "event": "http_agent_call_timed_out" if timed_out else "http_agent_call_failed",
                 "source": source,
                 "target": target,
                 "task_id": task_id,
@@ -280,6 +316,7 @@ async def handle_http_send(
                 cid,
             ),
             cfg.server.pending_message_ttl_hours * 3600,
+            source_kind=source_kind,
         )
 
 

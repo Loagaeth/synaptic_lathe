@@ -59,7 +59,7 @@ Homepage = "https://github.com/Loagaeth/synaptic_lathe"
 include = ["synapse*"]
 
 [tool.setuptools.package-data]
-synapse = ["web/index.html"]
+synapse = ["web/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

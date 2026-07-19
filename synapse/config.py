@@ -149,6 +149,7 @@ class ServerConfig(_StrictConfigModel):
     auto_memory_threshold: int = Field(default=0, ge=0, le=1000)
     auto_memory_max_chars: int = Field(default=4000, ge=256, le=100_000)
     pending_message_ttl_hours: int = Field(default=24, ge=1, le=720)
+    task_history_hours: int = Field(default=168, ge=24, le=8760)
 
     def get_worker_api_key(self) -> str:
         """Use a least-privilege worker key, falling back for old configs."""

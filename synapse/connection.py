@@ -66,8 +66,9 @@ def _sanitize_profile_capability(name: str, raw: Any) -> dict[str, Any]:
     max_output_bytes = _safe_positive_int(meta.get("max_output_bytes"), maximum=16 * 1024 * 1024)
     if max_output_bytes is not None:
         result["max_output_bytes"] = max_output_bytes
-    for key in ("supports_session", "session_required", "allow_raw_session_id"):
+    for key in ("supports_session", "session_required", "allow_raw_session_id", "advisory_safe"):
         result[key] = _safe_bool(meta.get(key))
+    result["tags"] = _safe_identifier_list(meta.get("tags"), limit=8)
     default_alias = _safe_identifier(meta.get("default_session_alias") or "")
     if default_alias:
         result["default_session_alias"] = default_alias
@@ -285,6 +286,34 @@ class ConnectionManager:
         elif delivered:
             await self.touch(agent_name, websocket)
         return delivered
+
+    def metadata_for(self, agent_name: str) -> dict[str, Any]:
+        """Return a detached sanitized metadata snapshot for one online Agent."""
+
+        metadata = self._metadata.get(agent_name)
+        if metadata is None:
+            return {}
+        return json.loads(json.dumps(metadata, ensure_ascii=False, default=str))
+
+    def remove_pending_task(self, agent_name: str, task_id: str) -> int:
+        """Remove queued task deliveries after an administrator cancels a task."""
+
+        messages = self._pending.get(agent_name, [])
+        kept: list[tuple[float, int, dict[str, Any]]] = []
+        removed = 0
+        for item in messages:
+            message = item[2]
+            payload = message.get("payload") if isinstance(message, dict) else None
+            queued_task_id = payload.get("task_id") if isinstance(payload, dict) else None
+            if message.get("type") == "task" and queued_task_id == task_id:
+                removed += 1
+            else:
+                kept.append(item)
+        if kept:
+            self._pending[agent_name] = kept
+        else:
+            self._pending.pop(agent_name, None)
+        return removed
 
     def is_online(self, agent_name: str) -> bool:
         return agent_name in self._connections

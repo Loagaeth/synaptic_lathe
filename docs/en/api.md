@@ -9,6 +9,8 @@
 - REST administration/default context: `Authorization: Bearer <server.api_key>`.
 - WebSocket: `Authorization: Bearer <server.worker_api_key>`; the administrator key is also accepted.
 
+The current `worker_api_key` is a shared message-bus credential: a holder can register an unused name and send tasks or broadcasts to other Agents, but cannot access REST administration. Put mutually untrusted workers on separate instances.
+
 `public_read_context: true` opens only the five GET context endpoint groups. `POST /context/memory` and `/context/knowledge` still require the administrator key to prevent anonymous embedding spend. It never opens administration, logs, connection prompts, or WebSocket.
 
 ## REST
@@ -26,7 +28,7 @@
 | `GET` | `/context/skills?detail=1` | Skills |
 | `GET` | `/context/personas?detail=1` | Personas |
 | `GET` | `/context/prompts?detail=1` | Prompt documents |
-| `GET/POST` | `/connection-prompt` | Generate a bootstrap prompt |
+| `GET/POST` | `/connection-prompt` | Generate a bootstrap prompt; see the [prompt guide](prompts.md) |
 | `GET` | `/install/{type}` | Generate an install guide |
 
 `/context/agents` exposes declared client name/version, capabilities, profile names, suggested timeout, output limit, and session aliases. It does not expose executable paths, environment values, or real session IDs.
@@ -43,8 +45,40 @@
 | `GET/POST` | `/admin/config` | Read redacted config; update memory only |
 | `GET` | `/admin/logs` | Recent structured logs |
 | `GET` | `/admin/logs/stream` | SSE live log stream |
+| `GET/POST` | `/admin/tasks` | Query/create human-originated Agent tasks |
+| `GET` | `/admin/tasks/{id}` | Full task, result, and state |
+| `POST` | `/admin/tasks/{id}/cancel` | Cancel with a human reason |
+| `GET` | `/admin/tasks/stream` | SSE state events and bounded live fragments |
+| `GET` | `/admin/stats/agents` | Invocation counts by Agent/Profile/purpose/outcome |
+| `POST` | `/admin/agents/probe` | Broadcast/targeted WS probe without an LLM call |
+| `GET/POST` | `/admin/agent-tags`, `/admin/agent-tags/refresh` | Capability tags and read-only self-assessment |
+| `GET` | `/admin/task-groups[/{id}]` | Auction/team task groups |
+| `POST` | `/admin/auctions`, `/admin/auctions/{id}/select` | Create auction and select a bid |
+| `POST` | `/admin/teams`, `/admin/teams/{id}/approve` | Create a team plan and approve assignments |
 
 Config updates use an async lock, advisory file lock, and same-directory atomic replacement. Server/key settings and the embedding key are not writable through this API.
+
+### Human-Originated Web Tasks
+
+Terminal task and task-group records are retained for `server.task_history_hours=168` hours by default. Invocation counts are aggregated daily and do not depend on retaining task bodies.
+
+The browser does not register as a WebSocket Agent. `POST /admin/tasks` creates a durable `source_kind=web` task with administrator authentication. It accepts `agent`, optional `profile`, `plan`, `timeout`, and `session_alias`. Read final output from task detail; SSE carries state and individual live fragments capped at 2048 characters. Cancellation accepts `{"reason":"..."}`, persists the reason, removes undelivered work, and sends `cancel` only to an online worker.
+
+An auction has at most eight candidates and creates one tracked `purpose=bid` task per endpoint. Bids and team planning require profiles declaring `advisory_safe: true`. The server adds a fixed read-only proposal instruction, while the real boundary remains the local command, sandbox, and OS user. A human must select a completed bid and explicitly provide `executor: {agent, profile}` before execution; the bidding endpoint is never implicitly reused as the executor. A completed team plan enters `AWAITING_APPROVAL`; a human then submits at most eight explicit assignments. Selection, approval, and cancellation claim the group state atomically, so duplicate submissions cannot fan out work twice. States derived from child tasks are also persisted with compare-and-set, so a stale query cannot roll back a human action.
+
+Auction selection example:
+
+```json
+{
+  "bid_task_id": "<completed-bid-task-id>",
+  "executor": {"agent": "local-dispatcher", "profile": "codex"},
+  "plan": "the final human-approved requirement",
+  "timeout": 1800,
+  "session_alias": ""
+}
+```
+
+`/admin/agent-tags/refresh` is also an advisory task. Its bounded JSON result is stored as `self_reported`. Self-reported tags and bid claims are untrusted display data and never affect authentication, routing authorization, or command selection.
 
 ## WebSocket
 
@@ -159,9 +193,13 @@ The source receives `task_result`. If disconnected, it is placed in a bounded in
 
 ### Timeout, Disconnect, Cancel
 
-At timeout the server marks the task `TIMEOUT`, reports an error to the source, and sends the target a `cancel` frame containing task ID and reason. Built-in workers terminate the active child process group immediately.
+At timeout the server marks the task `TIMEOUT`, reports an error to an Agent source or an SSE terminal event to the Web source, removes undelivered work from the reconnect queue, and sends `cancel` only when the target is online. Built-in workers terminate the active child process group immediately.
 
 A target disconnect marks its `DISPATCHED/EXECUTING` tasks `ERROR` and reports `TARGET_DISCONNECTED`. A source disconnect does not abandon tasks already sent.
+
+### Connectivity Probe
+
+An administrator probe sends `{"type":"probe","payload":{"probe_id":"..."}}`. A capable worker answers with `probe_ack` containing only that ID, `busy`, and `queue_depth`. Identity comes from the registered connection, not from the acknowledgement. Probes are transient, never queued, and do not start a child process or LLM.
 
 ### Broadcast
 
@@ -169,7 +207,7 @@ A target disconnect marks its `DISPATCHED/EXECUTING` tasks `ERROR` and reports `
 {"type":"broadcast","payload":{"data":{"event":"refresh"}}}
 ```
 
-The server sends this to all currently online connections and replies with `broadcast_ack` containing sent/targets. Broadcasts are neither persisted nor redelivered.
+The server sends this to all currently online connections and replies with `broadcast_ack` containing sent/targets. Broadcasts are neither persisted nor redelivered. The sender name comes from the registered connection, but the payload remains an untrusted notification and must not automatically execute as a task.
 
 ## Limits and Errors
 

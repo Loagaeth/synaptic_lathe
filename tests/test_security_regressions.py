@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -155,6 +156,21 @@ def test_atomic_config_failure_preserves_original(tmp_path, monkeypatch):
     assert config_path.read_text(encoding="utf-8") == original
 
 
+def test_web_assets_do_not_require_unsafe_inline_csp(secured_client):
+    response = secured_client.get("/web/index.html")
+    assert response.status_code == 200
+    policy = response.headers["content-security-policy"]
+    assert "script-src 'self'" in policy
+    assert "style-src 'self'" in policy
+    assert "'unsafe-inline'" not in policy
+
+    web_dir = Path(__file__).resolve().parents[1] / "synapse" / "web"
+    source = (web_dir / "index.html").read_text(encoding="utf-8")
+    source += (web_dir / "app.js").read_text(encoding="utf-8")
+    assert not re.search(r"\s(?:onclick|onchange|onload|onerror)=", source, re.IGNORECASE)
+    assert not re.search(r"\sstyle=", source, re.IGNORECASE)
+
+
 def test_health_does_not_return_raw_database_error(secured_client, monkeypatch):
     from synapse import server
 
@@ -178,9 +194,12 @@ def test_install_guide_uses_wss_and_no_http_ws_url(tmp_path):
     client = TestClient(app, base_url="https://example.test")
     response = client.get("/install/profile_worker")
     assert response.status_code == 200
-    command = response.json()["guide"]["run"]
+    guide = response.json()["guide"]
+    command = guide["run"]
     assert "wss://example.test/ws" in command
     assert "http://example.test/ws" not in command
+    assert "./synaptic-worker/workerctl" in guide["note"]
+    assert "synaptic-workerctl" not in guide["note"]
 
 
 def test_config_rejects_misleading_or_credential_bearing_endpoints():
@@ -373,6 +392,21 @@ def test_log_redaction_handles_json_assignments_and_url_credentials():
     assert "***" in redacted
 
 
+def test_structured_logs_do_not_emit_session_aliases():
+    import json
+    import logging
+
+    from synapse.logging import StructuredFormatter
+
+    record = logging.LogRecord("synapse", logging.INFO, __file__, 1, "task", (), None)
+    record.profile = "codex"
+    record.session_alias = "private-session-id"
+    payload = json.loads(StructuredFormatter().format(record))
+    assert payload["profile"] == "codex"
+    assert "session_alias" not in payload
+    assert "private-session-id" not in json.dumps(payload)
+
+
 def test_config_normalizes_cors_and_rejects_url_queries():
     config = ServerConfig(cors_origins=["HTTPS://Example.TEST/", "https://example.test"])
     assert config.cors_origins == ["https://example.test"]
@@ -504,3 +538,37 @@ def test_custom_worker_lock_does_not_chmod_its_parent(tmp_path):
     assert lock.acquire() is True
     lock.release()
     assert parent.stat().st_mode & 0o777 == 0o755
+
+
+def test_database_permission_repair_tolerates_disappearing_wal(tmp_path, monkeypatch):
+    from synapse import db as db_module
+
+    if not hasattr(os, "fchmod"):
+        pytest.skip("descriptor-based chmod is unavailable")
+    database = tmp_path / "tasks.db"
+    wal = tmp_path / "tasks.db-wal"
+    database.write_bytes(b"db")
+    wal.write_bytes(b"wal")
+    original_lstat = Path.lstat
+
+    def racing_lstat(path):
+        result = original_lstat(path)
+        if path == wal:
+            path.unlink(missing_ok=True)
+        return result
+
+    monkeypatch.setattr(Path, "lstat", racing_lstat)
+    db_module._secure_database_files(database)
+    assert database.stat().st_mode & 0o777 == 0o600
+
+
+def test_profile_raw_session_flag_requires_real_boolean(tmp_path):
+    from synapse.agents.profile_agent import ProfileConfigError, load_profile_config
+
+    profile_file = tmp_path / "profiles.yaml"
+    profile_file.write_text(
+        'profiles:\n  tool:\n    command: [tool, "{plan}"]\n    allow_raw_session_id: "false"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ProfileConfigError, match="allow_raw_session_id must be a boolean"):
+        load_profile_config(str(profile_file))

@@ -22,6 +22,8 @@ WS_CAPABILITIES = (
     "task_chunk",
     "return",
     "cancel",
+    "probe",
+    "probe_ack",
     "broadcast",
     "offline_queue",
     "profile_dispatch",

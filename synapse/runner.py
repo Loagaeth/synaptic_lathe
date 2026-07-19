@@ -125,4 +125,7 @@ async def main(config_path: str = "config.yaml") -> None:
 
 
 def run(config_path: str = "config.yaml") -> None:
-    asyncio.run(main(config_path))
+    try:
+        asyncio.run(main(config_path))
+    except KeyboardInterrupt:
+        pass
