@@ -181,7 +181,7 @@ A command still waiting for a TTY or approval is terminated at timeout and retur
 | `--no-reconnect` | `SYNAPTIC_RECONNECT=0` | Exit after disconnect |
 | `--allow-duplicate` | `SYNAPTIC_ALLOW_DUPLICATE_WORKER=1` | Disable local lock; not recommended |
 
-The default child environment contains basic PATH/HOME/locale/temp/certificate values. It excludes API keys, `SYNAPTIC_*`, dynamic-loader variables, and HTTP proxies. Pass a required proxy explicitly, for example `--pass-env HTTPS_PROXY --pass-env NO_PROXY`.
+The default child environment contains basic PATH/HOME/locale/temp/certificate values. It excludes API keys, `SYNAPTIC_*`, dynamic-loader variables, and HTTP proxies. Pass a required proxy explicitly with `--pass-env HTTPS_PROXY --pass-env NO_PROXY`, or set `pass_env: [HTTPS_PROXY, NO_PROXY]` on the affected profile. CLI credentials belong to the OS account running the Worker; complete login and a minimal call as that same account first.
 
 Output is bounded by raw bytes and NUL/ANSI/control data is removed before return. On `output_truncated=true`, request a summary or paged result instead of blindly increasing the limit.
 

@@ -4,6 +4,8 @@ default_profile: codex
 timeout: 600
 max_output_bytes: 200000
 
+# Child processes do not inherit proxy variables or provider-specific environment
+# settings by default. Add a narrow pass_env list to only the profiles that need it.
 profiles:
   claude:
     command:

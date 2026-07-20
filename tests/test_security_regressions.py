@@ -156,6 +156,14 @@ def test_atomic_config_failure_preserves_original(tmp_path, monkeypatch):
     assert config_path.read_text(encoding="utf-8") == original
 
 
+def test_web_assets_disable_stale_browser_caching(secured_client):
+    for url in ("/", "/admin", "/web/index.html", "/web/app.js", "/web/styles.css"):
+        response = secured_client.get(url, follow_redirects=False)
+        assert response.status_code in {200, 307}
+        assert "no-store" in response.headers.get("cache-control", "")
+        assert response.headers.get("pragma") == "no-cache"
+
+
 def test_web_assets_do_not_require_unsafe_inline_csp(secured_client):
     response = secured_client.get("/web/index.html")
     assert response.status_code == 200

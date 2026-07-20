@@ -29,6 +29,7 @@ from synapse.agent_catalog import (
     _available_agent_details,
     _build_default_skills,
     build_connection_prompt,
+    resolve_profile_defaults,
 )
 from synapse.banner import format_banner
 from synapse.config import GlobalConfig, MemoryConfig
@@ -127,6 +128,7 @@ _MAX_PERSONA_BYTES = 256
 _FORWARDED_TASK_STRING_FIELDS = {"profile", "tool", "session_id", "session", "ssid"}
 _MAX_TASK_OPTION_BYTES = 4096
 _MAX_TASK_TIMEOUT_SECONDS = 3600
+_TASK_RETURN_GRACE_SECONDS = 10
 _MAX_FILE_CONTENT_BYTES = 500_000
 _MAX_PERSONA_COUNTERS = 10_000
 
@@ -905,9 +907,11 @@ async def _watch_task_timeout(
     source_agent: str,
     target_agent: str,
     correlation_id: str,
+    *,
+    grace_seconds: float = 0.0,
 ) -> None:
     try:
-        await asyncio.sleep(timeout_seconds)
+        await asyncio.sleep(timeout_seconds + max(0.0, grace_seconds))
         timed_out = await update_task_status(
             cfg.db_path,
             task_id,
@@ -1618,7 +1622,7 @@ async def ws_endpoint(ws: WebSocket):
             if msg_type == "send":
                 requested_target = payload.get("target", "")
                 plan = payload.get("plan", "")
-                timeout = payload.get("timeout", 60)
+                requested_timeout = payload.get("timeout") if "timeout" in payload else None
                 cid = data.get("correlation_id") or generate_correlation_id()
 
                 if not isinstance(requested_target, str):
@@ -1646,7 +1650,6 @@ async def ws_endpoint(ws: WebSocket):
                 if persona_error:
                     await _send_ws_error(ws, persona_error, "INVALID_REQUEST", cid)
                     continue
-                timeout = _bounded_timeout(timeout)
                 forwarded_options, forward_error = _copy_forwarded_task_options(payload, cfg.server.max_body_bytes)
                 if forward_error:
                     await _send_ws_error(ws, forward_error, "INVALID_REQUEST", cid)
@@ -1658,6 +1661,7 @@ async def ws_endpoint(ws: WebSocket):
 
                 agent_cfg = cfg.agents.get(target)
                 if agent_cfg:
+                    timeout = _bounded_timeout(requested_timeout)
                     try:
                         await handle_http_send(
                             cfg,
@@ -1679,6 +1683,16 @@ async def ws_endpoint(ws: WebSocket):
                 if not resolution["online"]:
                     await _send_ws_error(ws, resolution["error"], "ROUTING_NOT_FOUND", cid)
                     continue
+
+                requested_profile = forwarded_options.get("profile") or forwarded_options.get("tool", "")
+                metadata = connection_manager.metadata_for(target)
+                selected_profile, advertised_timeout = resolve_profile_defaults(
+                    metadata.get("client", {}),
+                    requested_profile,
+                )
+                timeout = _bounded_timeout(requested_timeout, advertised_timeout)
+                if selected_profile and not requested_profile:
+                    forwarded_options["profile"] = selected_profile
 
                 try:
                     task_id = await create_task(
@@ -1787,6 +1801,21 @@ async def ws_endpoint(ws: WebSocket):
                     continue
                 current_task = task
                 current_task["status"] = "EXECUTING"
+                await _cancel_timeout_watcher(cid)
+                execution_timeout = _bounded_timeout(task.get("timeout"))
+                execution_watcher = asyncio.create_task(
+                    _watch_task_timeout(
+                        cfg,
+                        cid,
+                        execution_timeout,
+                        str(task.get("source_agent") or ""),
+                        agent_name,
+                        cid,
+                        grace_seconds=_TASK_RETURN_GRACE_SECONDS,
+                    ),
+                    name=f"task-execution-timeout-{cid}",
+                )
+                _timeout_tasks[cid] = (str(task.get("source_agent") or ""), execution_watcher)
                 reset_stream()
                 if task.get("source_kind") == "web":
                     await task_events.publish(

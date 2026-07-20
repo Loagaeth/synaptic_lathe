@@ -500,6 +500,11 @@ def test_web_index_exposes_theme_and_management_controls():
     assert 'data-tab="logs"' in html
     assert 'data-tab="agents"' in html
     assert 'data-tab="tasks"' in html
+    assert "refreshHealth(true)" in html
+    assert 'id="health-result"' in html
+    assert "healthSummary" in html
+    assert 'data-action="root"' not in html
+    assert "case'root'" not in html
     assert "ragents()" in html
     assert "/admin/tasks" in html
     assert "/admin/auctions" in html

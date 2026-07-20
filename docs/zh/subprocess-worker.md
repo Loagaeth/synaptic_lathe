@@ -181,7 +181,7 @@ Profile worker 关闭子进程 stdin，不能替用户点击批准。先在本�
 | `--no-reconnect` | `SYNAPTIC_RECONNECT=0` | 断线后退出 |
 | `--allow-duplicate` | `SYNAPTIC_ALLOW_DUPLICATE_WORKER=1` | 关闭本地单实例保护，不推荐 |
 
-默认 child env 只保留 PATH、HOME、locale、临时目录和证书路径。API key、`SYNAPTIC_*`、动态加载器变量和 HTTP proxy 不继承；代理需要显式 `--pass-env HTTPS_PROXY --pass-env NO_PROXY`。
+默认 child env 只保留 PATH、HOME、locale、临时目录和证书路径。API key、`SYNAPTIC_*`、动态加载器变量和 HTTP proxy 不继承；代理需要在命令行用 `--pass-env HTTPS_PROXY --pass-env NO_PROXY`，或在对应 Profile 中配置 `pass_env: [HTTPS_PROXY, NO_PROXY]`。CLI 认证文件属于运行 worker 的系统用户；先以同一用户完成登录和最小调用测试。
 
 输出按原始字节限制，返回前清理 NUL、ANSI 和控制字符。看到 `output_truncated=true` 应让调用方请求摘要或分页，不要盲目提高上限。
 

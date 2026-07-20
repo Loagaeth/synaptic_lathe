@@ -28,8 +28,7 @@ function handleAction(control){
     case'toggle-theme':return toggleTheme();
     case'logout':return logout();
     case'save-auth':return saveAuthToken();
-    case'root':return window.location.assign('/');
-    case'refresh-health':return refreshHealth().then(()=>notify('健康检查已刷新'));
+    case'refresh-health':return refreshHealth(true);
     case'copy-slot':return copySlotText(control.dataset.slot||'');
     case'delete-slot':return deleteSlotItem(control.dataset.slot||'');
     case'reload':return load();
@@ -86,7 +85,7 @@ function showAuthRequired(msg='需要 API key 才能访问管理功能。'){
   stopTaskStream();
   const m=document.getElementById('main');
   if(!m)return;
-  m.innerHTML=`<div class="auth-panel"><h3>需要认证</h3><p>${e(msg)}</p><p>请在服务端 <span class="inline-code">config.yaml</span> 中查看 <span class="inline-code">server.api_key</span>，然后在本页输入。浏览器只会把 key 保存在当前标签页的 sessionStorage 中。</p><input id="auth-token" type="password" autocomplete="off" placeholder="server.api_key"><div class="auth-actions"><button type="button" data-action="save-auth">进入管理页</button><button type="button" class="secondary" data-action="root">回到根路径</button><button type="button" class="secondary" data-action="refresh-health">只检查健康状态</button></div><p class="muted">如果你是部署者且希望公开只读上下文，可配置 <span class="inline-code">server.public_read_context: true</span>；注意这会公开记忆、知识、技能、人设、提示词和 Agent 状态，管理员接口、日志和两个可能触发 embedding 的语义搜索仍然需要认证。</p></div>`;
+  m.innerHTML=`<div class="auth-panel"><h3>需要认证</h3><p>${e(msg)}</p><p>请在服务端 <span class="inline-code">config.yaml</span> 中查看 <span class="inline-code">server.api_key</span>，然后在本页输入。浏览器只会把 key 保存在当前标签页的 sessionStorage 中。</p><input id="auth-token" type="password" autocomplete="off" placeholder="server.api_key"><div class="auth-actions"><button type="button" data-action="save-auth">进入管理页</button><button type="button" class="secondary" data-action="refresh-health">检查健康状态</button></div><div id="health-result" class="health-result" role="status" aria-live="polite"></div><p class="muted">如果你是部署者且希望公开只读上下文，可配置 <span class="inline-code">server.public_read_context: true</span>；注意这会公开记忆、知识、技能、人设、提示词和 Agent 状态，管理员接口、日志和两个可能触发 embedding 的语义搜索仍然需要认证。</p></div>`;
   const input=document.getElementById('auth-token');
   if(input){input.focus();input.addEventListener('keydown',event=>{if(event.key==='Enter')saveAuthToken()})}
 }
@@ -116,9 +115,39 @@ function safeUnixDate(v){const n=Number(v||0);if(!n)return '';return new Date(n>
 function writeBody(extra={}){const body={...extra};const content=g('f-content').trim();const file=g('f-file').trim();if(content)body.content=content;if(file)body.file=file;return body}
 function scoreBadge(x){return x.score===undefined?'':`<span class="badge ok">score ${e(x.score)}</span>`}
 
-async function refreshHealth(){
+function healthSummary(h){
+  const status=h.status==='ok'?'正常':h.status==='degraded'?'降级':'不可达';
+  const db=h.db==='ok'?'正常':h.db==='unavailable'?'不可用':h.db==='error'?'检查失败':'未检查';
+  const parts=[`服务：${status}`,`数据库：${db}`];
+  if(h.http_status)parts.push(`HTTP：${h.http_status}`);
+  if(h.version)parts.push(`版本：${h.version}`);
+  if(h.api_version)parts.push(`API：${h.api_version}`);
+  if(h.ws_protocol_version!==undefined)parts.push(`WS 协议：${h.ws_protocol_version}`);
+  if(h.error)parts.push(`错误：${h.error}`);
+  return parts.join('；');
+}
+function showHealthResult(h){
+  const summary=healthSummary(h);
+  const box=document.getElementById('health-result');
+  if(box){box.textContent=summary;box.className='health-result '+(h.status==='ok'&&h.db==='ok'?'ok':'err')}
+  notify(summary);
+}
+async function refreshHealth(showDetails=false){
   const dot=document.getElementById('status-dot');
-  try{const r=await fetch(B+'/health?check=db');const h=await r.json();dot.className='dot '+(h.status==='ok'&&h.db==='ok'?'online':'warn');return h}catch(_e){dot.className='dot offline';return {status:'offline',db:'error'}}
+  let health;
+  try{
+    const response=await fetch(B+'/health?check=db',{cache:'no-store'});
+    let payload={};
+    try{payload=await response.json()}catch(_error){}
+    if(!response.ok)throw new Error(`HTTP ${response.status} ${response.statusText||'请求失败'}`);
+    health={...payload,http_status:response.status};
+    if(dot)dot.className='dot '+(health.status==='ok'&&health.db==='ok'?'online':'warn');
+  }catch(error){
+    health={status:'offline',db:'error',error:error instanceof Error?error.message:'网络连接失败'};
+    if(dot)dot.className='dot offline';
+  }
+  if(showDetails)showHealthResult(health);
+  return health;
 }
 
 async function load(){

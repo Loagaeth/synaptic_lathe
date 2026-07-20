@@ -52,7 +52,9 @@ worker 默认在当前进程内指数退避重连，不依赖 systemd/Docker 反
 
 Profile worker 关闭 stdin。CLI 如果等待登录、TTY 或人工审批，只会在 timeout 后终止。先在本机完成登录，使用本地 CLI 支持的非交互/只读策略，再接入 profile。Reasonix 首次初始化可能较慢，未确认轻量配置时使用 `timeout: 1800`。
 
-服务端超时会发送 `cancel`；内置 worker 现在会在子进程运行期间继续接收控制帧，并终止整个子进程组。
+服务端超时会发送 `cancel`；内置 worker 现在会在子进程运行期间继续接收控制帧，并终止整个子进程组。调用方未传 `timeout` 时，服务端使用目标 worker 为所选或默认 Profile 声明的 `suggested_timeout`；调用方显式值仍优先。任务被 worker 接受后才重新计算完整执行时限，服务端另留 10 秒用于终止子进程并送达超时结果，这 10 秒不会扩大子进程执行时间。
+
+“在线”只证明 WebSocket 已注册，不证明每个本地 CLI 已登录或能联网。必须用运行 worker 的同一系统用户逐个执行最小测试。需要代理时在对应 Profile 中显式加入 `pass_env: [HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY]`；Claude 若依赖 `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` 也要逐项放行。不要以 root 运行指向普通用户 HOME 的 CLI，否则可能生成普通用户不可写的认证、状态或日志文件。日志中出现 `profile_task_completed` 但没有 `profile_task_returned`，表示本地命令已经结束但 WS 结果送达失败。
 
 ## 输出被截断或出现大量 NUL
 

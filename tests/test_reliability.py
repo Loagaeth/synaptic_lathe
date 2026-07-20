@@ -41,11 +41,14 @@ def _receive_non_ping(socket) -> dict:
         socket.send_json({"type": "pong"})
 
 
-def _register(socket, name: str) -> dict:
+def _register(socket, name: str, *, client: dict | None = None) -> dict:
+    payload = {"agent_name": name, "protocol_version": 1}
+    if client is not None:
+        payload["client"] = client
     socket.send_json(
         {
             "type": "register",
-            "payload": {"agent_name": name, "protocol_version": 1},
+            "payload": payload,
         }
     )
     response = _receive_non_ping(socket)
@@ -401,6 +404,79 @@ def test_worker_message_loop_processes_cancel_while_task_is_active():
     assert cancel_calls >= 1
     assert started.is_set()
     assert finished.is_set()
+
+
+def test_agent_send_uses_worker_advertised_profile_timeout(api_client):
+    client_meta = {
+        "name": "profile_worker",
+        "profiles": ["codex"],
+        "default_profile": "codex",
+        "default_timeout": 600,
+        "profile_capabilities": {
+            "codex": {
+                "suggested_timeout": 1800,
+                "advisory_safe": True,
+            }
+        },
+    }
+    with api_client.websocket_connect("/ws") as source, api_client.websocket_connect("/ws") as target:
+        _register(source, "default-timeout-source")
+        _register(target, "default-timeout-target", client=client_meta)
+        source.send_json(
+            {
+                "type": "send",
+                "correlation_id": "advertised-timeout-task",
+                "payload": {"target": "default-timeout-target", "plan": "work"},
+            }
+        )
+        task = _receive_non_ping(target)
+        assert task["type"] == "task"
+        assert task["payload"]["profile"] == "codex"
+        assert task["payload"]["timeout"] == 1800
+        assert _receive_non_ping(source)["type"] == "task_queued"
+
+        target.send_json({"type": "accept", "correlation_id": "advertised-timeout-task"})
+        target.send_json(
+            {
+                "type": "return",
+                "correlation_id": "advertised-timeout-task",
+                "payload": {"task_id": "advertised-timeout-task", "output": "ok"},
+            }
+        )
+        assert _receive_non_ping(source)["type"] == "task_result"
+
+
+def test_worker_gets_result_delivery_grace_after_execution_timeout(api_client):
+    with api_client.websocket_connect("/ws") as source, api_client.websocket_connect("/ws") as target:
+        _register(source, "grace-source")
+        _register(target, "grace-target")
+        source.send_json(
+            {
+                "type": "send",
+                "correlation_id": "result-grace-task",
+                "payload": {"target": "grace-target", "plan": "work", "timeout": 1},
+            }
+        )
+        assert _receive_non_ping(target)["type"] == "task"
+        assert _receive_non_ping(source)["type"] == "task_queued"
+        target.send_json({"type": "accept", "correlation_id": "result-grace-task"})
+
+        time.sleep(1.2)
+        target.send_json(
+            {
+                "type": "return",
+                "correlation_id": "result-grace-task",
+                "payload": {
+                    "task_id": "result-grace-task",
+                    "exit_code": -1,
+                    "error": "Process timed out after 1s",
+                    "output": "",
+                },
+            }
+        )
+        result = _receive_non_ping(source)
+        assert result["type"] == "task_result"
+        assert result["payload"]["error"] == "Process timed out after 1s"
 
 
 def test_return_must_match_the_worker_active_task(api_client):

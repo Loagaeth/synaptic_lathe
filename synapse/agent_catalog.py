@@ -64,6 +64,43 @@ def _available_agent_details(config: GlobalConfig) -> dict[str, list[dict[str, A
     }
 
 
+def resolve_profile_defaults(
+    client: Mapping[str, Any],
+    requested_profile: str = "",
+    *,
+    default_timeout: int = 60,
+) -> tuple[str, int]:
+    """Resolve a Worker's advertised profile and bounded default timeout."""
+
+    capabilities = client.get("profile_capabilities")
+    if not isinstance(capabilities, Mapping):
+        capabilities = {}
+    advertised = client.get("profiles")
+    names = {str(name) for name in advertised} if isinstance(advertised, list) else set()
+    names.update(str(name) for name in capabilities)
+
+    selected = requested_profile or str(client.get("default_profile") or "")
+    if not selected and len(names) == 1:
+        selected = next(iter(names))
+
+    profile_meta = capabilities.get(selected)
+    if not isinstance(profile_meta, Mapping):
+        profile_meta = {}
+    raw_timeout = (
+        profile_meta.get("suggested_timeout")
+        or profile_meta.get("timeout")
+        or client.get("default_timeout")
+        or default_timeout
+    )
+    if isinstance(raw_timeout, bool):
+        return selected, default_timeout
+    try:
+        timeout = int(raw_timeout)
+    except (TypeError, ValueError):
+        timeout = default_timeout
+    return selected, min(max(timeout, 1), 3600)
+
+
 def _profile_capability_summary(client: Mapping[str, Any]) -> str:
     caps = client.get("profile_capabilities")
     profile_names = client.get("profiles")

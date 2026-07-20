@@ -707,9 +707,25 @@ class ProfileDispatcherAgent(BaseAgent):
                 print(f"Register failed: {resp}", file=sys.stderr)
                 return False
             self._connected = True
+            synapse_logger.info(
+                "profile worker registered",
+                extra={
+                    "event": "profile_registered",
+                    "agent": self.agent_name,
+                    "profile_count": len(self.profiles),
+                },
+            )
             print_registration_banner(resp)
             return True
         except Exception as exc:
+            synapse_logger.warning(
+                "profile worker connection failed",
+                extra={
+                    "event": "profile_connection_failed",
+                    "agent": self.agent_name,
+                    "error_type": type(exc).__name__,
+                },
+            )
             print(f"Connection failed: {exc}", file=sys.stderr)
             return False
 
@@ -917,14 +933,36 @@ class ProfileDispatcherAgent(BaseAgent):
             if value:
                 return_payload[name] = value
 
-        await self._ws.send(
-            json.dumps(
-                {
-                    "type": "return",
-                    "payload": return_payload,
-                    "correlation_id": cid,
-                }
+        try:
+            await self._ws.send(
+                json.dumps(
+                    {
+                        "type": "return",
+                        "payload": return_payload,
+                        "correlation_id": cid,
+                    }
+                )
             )
+        except Exception:
+            synapse_logger.exception(
+                "profile worker task result delivery failed",
+                extra={
+                    "event": "profile_task_return_failed",
+                    "agent": self.agent_name,
+                    "task_id": task_id,
+                    "profile": result.get("profile"),
+                },
+            )
+            raise
+        synapse_logger.info(
+            "profile worker task result delivered",
+            extra={
+                "event": "profile_task_returned",
+                "agent": self.agent_name,
+                "task_id": task_id,
+                "profile": result.get("profile"),
+                "exit_code": result.get("exit_code"),
+            },
         )
 
     async def run_loop(self) -> None:
@@ -944,6 +982,14 @@ async def _run_forever(args: argparse.Namespace) -> int:
             try:
                 await agent.run_loop()
             except Exception as exc:
+                synapse_logger.warning(
+                    "profile worker connection loop ended",
+                    extra={
+                        "event": "profile_connection_ended",
+                        "agent": args.name,
+                        "error_type": type(exc).__name__,
+                    },
+                )
                 print(f"Profile worker connection loop ended: {exc}", file=sys.stderr)
             finally:
                 await agent.disconnect()

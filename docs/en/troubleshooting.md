@@ -47,7 +47,9 @@ Workers reconnect in-process with exponential backoff; they do not require a sys
 
 Profile workers close child stdin. A CLI waiting for login, a TTY, or human approval is terminated at timeout. Complete login locally and configure a supported non-interactive/read-only policy before exposing the profile. Reasonix initialization can be slow; use `timeout: 1800` until the local setup is known to be lightweight.
 
-Server timeout emits `cancel`. Built-in workers continue receiving control frames while a child runs and terminate the whole child process group.
+Server timeout emits `cancel`. Built-in workers continue receiving control frames while a child runs and terminate the whole child process group. If a caller omits `timeout`, the server uses the target Worker's advertised `suggested_timeout` for the selected or default profile; an explicit caller value still wins. The full execution budget starts again when the Worker accepts the task, and the server keeps a separate 10-second delivery grace for process termination and the timeout result. That grace does not extend child execution.
+
+“Online” proves only that the WebSocket registered. It does not prove that every local CLI is authenticated or can reach its provider. Run a minimal command as the same OS account that runs the Worker. If a proxy is required, explicitly add `pass_env: [HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY]` to the affected profile; also allow `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL` when Claude depends on them. Do not run a user-home CLI as root, because it can leave credential, state, or log files unwritable by the Worker account. A `profile_task_completed` event without a following `profile_task_returned` event means local execution ended but WebSocket result delivery failed.
 
 ## Truncation or NUL Output
 
