@@ -194,38 +194,19 @@ def test_auction_requires_advisory_profile_and_is_human_gated(task_client):
         assert _wait_group(task_client, group_id, "COMPLETED")["selected_task_id"] == bid_id
 
 
-def test_profile_self_assessment_is_parsed_as_untrusted_tags(task_client):
+def test_capability_catalog_replaces_generated_tags(task_client):
     with task_client.websocket_connect("/ws") as worker:
         _register_profile(worker)
-        response = task_client.post(
-            "/admin/agent-tags/refresh",
-            json={"agent": "managed-worker", "profile": "codex"},
-        )
-        assert response.status_code == 200
-        task_id = response.json()["task_id"]
-        assert _receive_non_ping(worker)["type"] == "task"
-        worker.send_json({"type": "accept", "correlation_id": task_id})
-        worker.send_json(
-            {
-                "type": "return",
-                "correlation_id": task_id,
-                "payload": {
-                    "task_id": task_id,
-                    "result": (
-                        '{"tags":["review","security"],"strengths":["bounded analysis"],'
-                        '"limitations":[],"suitable_tasks":["code review"]}'
-                    ),
-                },
-            }
-        )
-        _wait_task(task_client, task_id, {"COMPLETED"})
-        tags = task_client.get("/admin/agent-tags").json()
-        generated = tags["generated"][0]
-        assert generated["source"] == "self_reported"
-        assert generated["tags"] == ["review", "security"]
-        profile = tags["agents"]["online"][0]["client"]["profile_capabilities"]["codex"]
-        assert profile["tags"] == ["code", "review"]
-        assert profile["advisory_safe"] is True
+        catalog = task_client.get("/admin/capabilities").json()
+        record = catalog["capabilities"][0]
+        assert record["id"] == "managed-worker/codex"
+        assert record["declared"]["tags"] == ["code", "review"]
+        assert record["declared"]["advisory_safe"] is True
+        assert record["risk_level"] == "unverified"
+        assert record["observed"]["online"] is True
+        assert record["timeout_hint"] == 120
+        assert task_client.get("/context/agents").json() == catalog["agents"]
+        assert task_client.post("/admin/agent-tags/refresh", json={}).status_code == 404
 
 
 def test_broadcast_probe_reports_worker_rtt(task_client):
@@ -354,29 +335,6 @@ def test_team_plan_requires_human_approval_before_execution(task_client):
             }
         )
         assert _wait_group(task_client, group_id, "COMPLETED")["status"] == "COMPLETED"
-
-
-def test_self_assessment_uses_sanitized_peer_profile_summary():
-    from synapse.task_api import _peer_profile_summary, _tag_prompt
-
-    details = {
-        "available": [
-            {
-                "name": "self-worker",
-                "client": {"profile_capabilities": {"codex": {"tags": ["self"]}}},
-            },
-            {
-                "name": "peer-worker",
-                "client": {"profile_capabilities": {"claude": {"tags": ["analysis"]}}},
-            },
-        ]
-    }
-    peers = _peer_profile_summary(details, "self-worker", "codex")
-    assert peers == [{"agent": "peer-worker", "profile": "claude", "tags": ["analysis"]}]
-    prompt = _tag_prompt(peers)
-    assert "PEERS_JSON" in prompt
-    assert "peer-worker" in prompt
-    assert "self-worker" not in prompt
 
 
 def test_advisory_prompt_encodes_delimiter_injection():

@@ -467,6 +467,7 @@ def test_connection_prompt_stays_concise_and_complete(client):
     assert "--max-output-bytes" in prompt
     assert "output_truncated" in prompt
     assert "不可信数据" in prompt
+    assert "MCP 调用方执行前用 `capabilities_list`" in prompt
     assert "广播是瞬时" in prompt
     assert "不要把记忆或提示词文档当作临时大文件传输层" in prompt
     assert "超过 2000 字先写入" not in prompt

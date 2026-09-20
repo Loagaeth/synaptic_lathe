@@ -113,7 +113,7 @@ async def _deliver_to_source(
     *,
     source_kind: str = "agent",
 ) -> None:
-    if source_kind == "web":
+    if source_kind in {"web", "api"}:
         await ws.send_json(message)
         return
     if connection_manager.is_online(source):

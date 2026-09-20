@@ -51,7 +51,7 @@
 | `GET` | `/admin/tasks/stream` | SSE 任务状态和受限实时片段 |
 | `GET` | `/admin/stats/agents` | 按 Agent/Profile/purpose/outcome 聚合调用次数 |
 | `POST` | `/admin/agents/probe` | 广播或定向 WS 连通性探测，不调用 LLM |
-| `GET/POST` | `/admin/agent-tags`, `/admin/agent-tags/refresh` | 能力标签与只读自评任务 |
+| `GET` | `/admin/capabilities` | 统一能力目录及 Agent 兼容视图 |
 | `GET` | `/admin/task-groups[/{id}]` | 竞拍/团队任务组 |
 | `POST` | `/admin/auctions`, `/admin/auctions/{id}/select` | 创建竞拍、人工选标 |
 | `POST` | `/admin/teams`, `/admin/teams/{id}/approve` | 创建团队规划、人工批准分工 |
@@ -78,7 +78,7 @@
 }
 ```
 
-`/admin/agent-tags/refresh` 也是只读 Agent 调用。返回 JSON 经长度/数量限制后标记为 `self_reported` 保存；这些标签和竞拍陈述都是不可信的自述信息，不参与认证、路由授权或命令选择。
+旧 `/admin/agent-tags*` 已移除。能力标签只从本地 Profile 配置声明读取，连接状态由服务端观察；MCP 调用权限独立配置。参见 [Fabric/MCP](fabric.md)。
 
 ## WebSocket
 

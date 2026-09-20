@@ -4,3 +4,4 @@ pytest-asyncio>=0.23
 ruff>=0.8
 bandit>=1.7
 pip-audit>=2.7
+mcp>=1.30,<2

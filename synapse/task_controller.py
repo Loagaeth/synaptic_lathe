@@ -1,4 +1,4 @@
-"""Web task dispatch controller for HTTP and WebSocket Agent endpoints."""
+"""Shared task dispatch controller for Web and scoped MCP callers."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
+from synapse.capabilities import resolve_profile_defaults
 from synapse.config import GlobalConfig
 from synapse.connection import connection_manager
 from synapse.handlers import handle_http_send
@@ -17,7 +18,7 @@ from synapse.task_queue import create_task, get_task, update_task_status
 from synapse.task_status import NONTERMINAL_TASK_STATUSES, TERMINAL_TASK_STATUSES
 
 
-class _WebTaskSink:
+class _TaskSink:
     """Minimal HTTP-adapter delivery sink backed by the authenticated task stream."""
 
     def __init__(self, request: Request, task_id: str) -> None:
@@ -47,8 +48,8 @@ class _WebTaskSink:
         )
 
 
-class WebTaskController:
-    """Coordinate authenticated human-originated tasks without a synthetic WS Agent."""
+class TaskController:
+    """Coordinate authenticated tasks without synthesizing an online Agent."""
 
     def __init__(
         self,
@@ -60,7 +61,6 @@ class WebTaskController:
         pending_ttl_seconds,
         watch_task_timeout,
         cancel_timeout_watcher,
-        available_agent_details,
         timeout_tasks: dict[str, tuple[str, asyncio.Task]],
         http_tasks: dict[str, asyncio.Task[None]],
     ) -> None:
@@ -71,7 +71,6 @@ class WebTaskController:
         self._pending_ttl_seconds = pending_ttl_seconds
         self._watch_task_timeout = watch_task_timeout
         self._cancel_timeout_watcher = cancel_timeout_watcher
-        self._available_agent_details = available_agent_details
         self.timeout_tasks = timeout_tasks
         self.http_tasks = http_tasks
 
@@ -114,10 +113,8 @@ class WebTaskController:
         advertised_profiles = client.get("profiles")
         names = set(str(name) for name in advertised_profiles) if isinstance(advertised_profiles, list) else set()
         names.update(str(name) for name in capabilities)
-        selected = profile or str(client.get("default_profile") or "")
-        if not selected and len(names) == 1:
-            selected = next(iter(names))
-        if profile and selected not in names:
+        selected, suggested_timeout = resolve_profile_defaults(client, profile)
+        if selected and selected not in names:
             raise HTTPException(
                 status_code=422,
                 detail=self._error_detail(
@@ -136,13 +133,10 @@ class WebTaskController:
             raise HTTPException(
                 status_code=409,
                 detail=self._error_detail(
-                    "Bids, planning, and self-assessment require a profile with advisory_safe: true",
+                    "Bids and planning require a profile with advisory_safe: true",
                     "ADVISORY_PROFILE_REQUIRED",
                 ),
             )
-        suggested_timeout = (
-            profile_meta.get("suggested_timeout") or profile_meta.get("timeout") or client.get("default_timeout") or 60
-        )
         return {
             "agent": agent_name,
             "profile": selected,
@@ -151,7 +145,7 @@ class WebTaskController:
             "profile_capability": profile_meta,
         }
 
-    async def _run_web_http_task(
+    async def _run_http_task(
         self,
         request: Request,
         *,
@@ -163,14 +157,16 @@ class WebTaskController:
         purpose: str,
         group_id: str,
         persona: str,
+        source: str,
+        source_kind: str,
     ) -> None:
         cfg: GlobalConfig = request.app.state.config
-        sink = _WebTaskSink(request, task_id)
+        sink = _TaskSink(request, task_id)
         try:
             await handle_http_send(
                 cfg,
                 sink,
-                "web-console",
+                source,
                 target,
                 plan,
                 timeout,
@@ -178,7 +174,7 @@ class WebTaskController:
                 cfg.agents[target],
                 {},
                 persona=persona,
-                source_kind="web",
+                source_kind=source_kind,
                 purpose=purpose,
                 title=title,
                 group_id=group_id,
@@ -201,8 +197,8 @@ class WebTaskController:
                     )
                 )
             synapse_logger.exception(
-                "web HTTP agent task failed",
-                extra={"event": "web_http_task_failed", "target": target, "task_id": task_id},
+                "managed HTTP agent task failed",
+                extra={"event": "managed_http_task_failed", "target": target, "task_id": task_id},
             )
 
     async def dispatch_task(
@@ -218,9 +214,11 @@ class WebTaskController:
         persona: str,
         purpose: str,
         group_id: str,
+        source: str = "web-console",
+        source_kind: str = "web",
     ) -> dict[str, Any]:
         cfg: GlobalConfig = request.app.state.config
-        endpoint = await self.resolve_endpoint(request, target, profile, purpose in {"bid", "plan", "tag"})
+        endpoint = await self.resolve_endpoint(request, target, profile, purpose in {"bid", "plan"})
         selected_profile = str(endpoint.get("profile") or "")
         effective_timeout = self._bounded_timeout(timeout, int(endpoint.get("timeout") or 60))
         scoped_persona, persona_error = self._task_persona(cfg, {"persona": persona})
@@ -233,12 +231,12 @@ class WebTaskController:
 
         task_id = await create_task(
             cfg.db_path,
-            "web-console",
+            source,
             target,
             plan,
             timeout=effective_timeout,
             persona=scoped_persona,
-            source_kind="web",
+            source_kind=source_kind,
             purpose=purpose,
             title=title,
             profile=selected_profile,
@@ -248,7 +246,7 @@ class WebTaskController:
 
         if endpoint["type"] == "http_api":
             job = asyncio.create_task(
-                self._run_web_http_task(
+                self._run_http_task(
                     request,
                     task_id=task_id,
                     target=target,
@@ -258,8 +256,10 @@ class WebTaskController:
                     purpose=purpose,
                     group_id=group_id,
                     persona=scoped_persona,
+                    source=source,
+                    source_kind=source_kind,
                 ),
-                name=f"web-http-task-{task_id}",
+                name=f"managed-http-task-{task_id}",
             )
             self.http_tasks[task_id] = job
             job.add_done_callback(lambda completed, current_id=task_id: self.http_tasks.pop(current_id, None))
@@ -279,7 +279,7 @@ class WebTaskController:
             task_payload: dict[str, Any] = {
                 "task_id": task_id,
                 "plan": plan,
-                "from": "web-console",
+                "from": source,
                 "timeout": effective_timeout,
             }
             if selected_profile:
@@ -289,10 +289,10 @@ class WebTaskController:
             if scoped_persona:
                 task_payload["persona"] = scoped_persona
             watcher = asyncio.create_task(
-                self._watch_task_timeout(cfg, task_id, effective_timeout, "web-console", target, task_id),
+                self._watch_task_timeout(cfg, task_id, effective_timeout, source, target, task_id),
                 name=f"task-timeout-{task_id}",
             )
-            self.timeout_tasks[task_id] = ("web-console", watcher)
+            self.timeout_tasks[task_id] = (source, watcher)
             delivered = await connection_manager.send_or_queue(
                 target,
                 self._build_ws_message("task", task_payload, task_id),
@@ -320,10 +320,10 @@ class WebTaskController:
             }
         )
         synapse_logger.info(
-            "web task dispatched",
+            "managed task dispatched",
             extra={
-                "event": "web_task_dispatched",
-                "source": "web-console",
+                "event": "managed_task_dispatched",
+                "source": source,
                 "target": target,
                 "task_id": task_id,
                 "profile": selected_profile,
@@ -381,9 +381,9 @@ class WebTaskController:
             }
         )
         synapse_logger.info(
-            "web task cancelled",
+            "managed task cancelled",
             extra={
-                "event": "web_task_cancelled",
+                "event": "managed_task_cancelled",
                 "target": target,
                 "task_id": task_id,
                 "reason_length": len(clean_reason),
@@ -424,6 +424,3 @@ class WebTaskController:
             else:
                 results.append({"agent": name, "ok": False, "status": "timeout"})
         return {"probe_id": probe_id, "results": results}
-
-    def agent_details(self, request: Request) -> dict[str, Any]:
-        return self._available_agent_details(request.app.state.config)

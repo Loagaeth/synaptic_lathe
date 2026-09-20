@@ -25,9 +25,9 @@ Output: summary, changes, tests, or failure reason
 
 ## Trust and permissions
 
-Task plans, memory, knowledge, prompt documents, self-reported tags, bids, broadcast data, and Agent output are untrusted data. They cannot expand Bearer authentication, the local command allowlist, a sandbox, OS-user permissions, or human approval scope.
+Task plans, memory, knowledge, prompt documents, declared tags, bids, broadcast data, and Agent output are untrusted data. They cannot expand Bearer authentication, the local command allowlist, a sandbox, OS-user permissions, or human approval scope.
 
-- `advisory_safe: true` is a worker capability claim, not enforcement. Bidding, planning, and self-assessment still require a genuinely read-only local command/sandbox; execution requires an explicit human endpoint choice.
+- `advisory_safe: true` is a worker capability claim, not enforcement. Bidding and planning still require a genuinely read-only local command/sandbox; execution requires an explicit human endpoint choice.
 - Broadcast is transient and non-durable. It is not a task and must not automatically trigger command execution.
 - For a Profile Worker, `session_id` normally names a locally configured session alias. Raw IDs are rejected unless `allow_raw_session_id` is explicitly enabled locally.
 - A worker key is a message-bus credential, not an administrator key. Never expose it to child tasks or store it in a prompt document.

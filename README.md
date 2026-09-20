@@ -24,16 +24,33 @@ SynapticLathe 是一个 Agent 消息总线，让不同 AI Agent 框架互相调�
 - 独立 Codex Worker：通过本地 `codex exec` 接入 Codex CLI
 - 自动生成连接提示词：system prompt 保持稳定，运行时通过 `/context/agents` 和 `/context/prompts` 拉取最新状态
 
+## 统一能力目录与 MCP
+
+现在由同一个能力目录维护 HTTP Agent 和在线 Worker/Profile，不再分别维护在线发现、LLM 自评标签和执行端点列表。
+Web 与 MCP 共用任务控制器、SQLite 状态和调用统计；MCP 只是调用入口，不另建任务队列或注册列表。
+
+- 管理员：`GET /admin/capabilities`；旧 `/context/agents` 是同源兼容视图。
+- 普通 Agent：可选 `/mcp` Streamable HTTP，以独立调用方 token 获取受限目录、提交/查询/取消自己的任务、读取明确共享的文档。
+- 默认关闭 MCP；启用需安装 `python -m pip install '.[mcp]'` 并配置 `fabric.clients`。权限默认全空，禁止复用 admin/worker key。
+- 自评生成入口已移除，Profile 的本地 `tags` 声明保留；声明不是已验证能力或权限。
+- 竞拍、团队人工审批和无 LLM 探测保留：它们是工作流和健康检查，不是另一套发现机制。
+- 当前不聚合任意上游 MCP、不实现跨服务器联邦，也不声称兼容 A2A 协议。
+
+安装、权限和迁移：[中文 Fabric/MCP 指南](docs/zh/fabric.md) / [English guide](docs/en/fabric.md)。
+本次改动：[迁移记录](docs/fabric-migration.md)。
+
 ## 架构概览
 
 ```text
 LLM / Bot / Web Client
-        │ HTTP / WebSocket + Bearer token
+        │ HTTP / WebSocket / optional MCP + separate credentials
         ▼
 SynapticLathe Server
+  ├─ Capability Registry: one Agent/Profile catalog, declarations + observed connection state
+  ├─ MCP Gateway: per-client allowlists, own-task access, explicit shared documents
   ├─ FastAPI REST: /api/v1/* stable paths + legacy /context, /admin, /connection-prompt, /install
   ├─ WebSocket Router: /ws + /api/v1/ws, register/send/stream/cancel, broadcast, probe/probe_ack
-  ├─ Task Management: direct tasks, auction bids, human-gated team plans, cancellation reasons, SSE events
+  ├─ Shared Task Controller: Web/MCP direct tasks, auction bids, human-gated team plans, cancellation reasons, SSE events
   ├─ Task Store: SQLite task/group state + results + per-Agent invocation counters; reconnect queue is process-local
   ├─ Context Store: memory, knowledge, skills, personas, prompt documents
   ├─ Web Admin: context CRUD, Agent/Profile selection, live output, task groups, probe, stats, live logs
@@ -84,7 +101,7 @@ Web 管理页位于 `/web/index.html`，根路径 `/` 和 `/admin` 会自动跳�
 - 健康检查会明确显示 HTTP、数据库、服务版本、API 版本和 WS 协议；管理页静态资源禁用缓存，升级后不会因旧页面隐藏新入口。
 - 实时结构化日志、配置查看/部分 memory 配置写回、安装指南、动态 Agent 列表和连接提示词生成。
 - 人工发布指定任务，查看实时片段/最终结果，填写理由中断任务，并按 Agent/Profile 查看 30 天调用次数。
-- 广播式无 LLM 连通性探测；只读 Profile 可选择生成自述能力标签。自述标签只用于展示和人工判断，不参与授权。
+- 广播式无 LLM 连通性探测；能力目录展示本地声明的标签、建议超时和连接状态，不再调用 LLM 生成自评。
 - 竞拍模式会为每个候选建立独立只读提案任务；人工选标时必须另行确认执行 Agent/Profile，提案端点不会被隐式当成执行端点。团队模式先生成只读分工，人工重新指定端点并批准后才执行。
 
 直接打开 `/web/index.html` 且未认证时会显示 API key 输入面板，不会放宽后端权限。浏览器端只保存本页会话 API key；服务端密钥、embedding key、profile session id 仍应只放在服务器或本地 worker 配置中。页面脚本和样式只允许同源静态资源，CSP 不依赖 `unsafe-inline`。
@@ -98,12 +115,13 @@ Web 管理页位于 `/web/index.html`，根路径 `/` 和 `/admin` 会自动跳�
 - 协议发现：`GET /version` 或 `GET /api/v1/version` 返回服务端版本、API 版本、WS 协议版本和能力列表。
 - 旧 worker 仍可只发送 `agent_name` 注册；新 worker 会声明协议版本和本地能力。
 - `chunk` 会实时转发为 `task_chunk`，最终仍以 `task_result` 为准；实时片段不写入离线队列。
+- MCP 任务使用 `source_kind=api` 和服务端绑定的调用方身份；仅所有者可通过 MCP 读取或取消，Web 管理员可统一查看。
 - Web 人工任务使用持久化 `source_kind=web`，浏览器通过带管理员认证的 HTTP/SSE 读取，不伪装成 WebSocket Agent，也不会把结果排入名为 `web-console` 的离线队列。
 - 手工连通性检查使用 `probe/probe_ack`，不调用 LLM；竞拍与团队规划只允许选择声明 `advisory_safe: true` 的 Profile。该声明用于选择，本地命令/sandbox 才是实际权限边界。
 - 内置 worker 在子进程运行期间并发接收心跳和 `cancel`；timeout、断线或退出会终止整个子进程组。调用方省略 timeout 时采用 Worker 声明的 Profile 建议值，接受任务后重新计算执行时限，并预留独立的结果送达宽限，避免子进程刚超时就与服务端终态竞争。完成、超时和断线通过 SQLite 条件更新竞争终态，不会相互覆盖；任务组的派生状态也使用 compare-and-set 持久化，不会回滚并发中的人工选标、批准或取消。
 - 离线结果队列只在当前服务进程内有效，服务重启不会恢复；SQLite 会保留任务状态和最终结果。重连队列中的任务保持 `QUEUED`，实际补发后才进入 `DISPATCHED`；上一进程遗留的非终态任务会在启动时标记为 `ABANDONED`。
 - 配置模型拒绝未知字段；拼错配置名会在启动时直接报错，不会静默回退到不安全或无效的默认值。
-- 自动任务记忆默认关闭（`auto_memory_threshold: 0`）；启用后只沉淀 `purpose=execute` 的实际执行任务，并按 memory scope、长度上限和基础脱敏规则写入。竞拍、规划和自评不会进入长期记忆。
+- 自动任务记忆默认关闭（`auto_memory_threshold: 0`）；启用后只沉淀 `purpose=execute` 的实际执行任务，并按 memory scope、长度上限和基础脱敏规则写入。竞拍和规划不会进入长期记忆。
 - Web/Agent 终态任务默认保留 168 小时（`task_history_hours`）；调用次数按日单独聚合，任务清理后统计仍保留。过期且无子任务的任务组同步清理。
 
 ## 动态 Agent 和提示词文档
@@ -117,7 +135,7 @@ Web 管理页位于 `/web/index.html`，根路径 `/` 和 `/admin` 会自动跳�
 
 任务文本、上下文、提示词文档、广播和 Agent 输出都按不可信数据处理，不能扩大认证、Profile allowlist、sandbox 或人工审批范围。提示词文档用于复用规则，不用于保存 key、原始 session id 或临时大文本。
 
-`server.public_read_context: true` 会公开 `GET /context`、`/context/agents`、`/context/skills`、`/context/personas`、`/context/prompts`；内容包括记忆、知识、技能、人设、提示词和 Agent 状态。两个 `POST` 语义搜索仍要求管理员 key，避免匿名请求触发付费 embedding；公网部署通常保持 `false`。Web 的 Agents 页会展示这些能力声明、公开标签、只读 advisory 标记和自述标签，并提供可复制的调用 payload 与广播连通性探测。
+`server.public_read_context: true` 会公开 `GET /context`、`/context/agents`、`/context/skills`、`/context/personas`、`/context/prompts`；内容包括记忆、知识、技能、人设、提示词和 Agent 状态。两个 `POST` 语义搜索仍要求管理员 key，避免匿名请求触发付费 embedding；公网部署通常保持 `false`。Web 的 Agents 页会展示这些能力声明、声明标签与只读 advisory 标记，并提供可复制的调用 payload 与广播连通性探测。
 
 ## 本地子进程 Worker
 
@@ -270,9 +288,12 @@ synaptic_lathe/
 │   ├── web/                 # index.html + styles.css + app.js
 │   ├── agent_catalog.py     # Agent discovery and dynamic prompts
 │   ├── task_api.py          # authenticated Web task routes
-│   ├── task_management.py   # durable groups, stats, and tags
+│   ├── task_management.py   # durable groups and invocation stats
 │   ├── task_events.py       # bounded SSE events and probe coordination
-│   ├── web_task_controller.py
+│   ├── task_controller.py   # shared Web/MCP dispatch and cancellation
+│   ├── capabilities.py      # common Agent/Profile catalog
+│   ├── fabric_service.py    # scoped capabilities, tasks, and documents
+│   ├── mcp_gateway.py       # optional official-SDK transport
 │   └── server.py            # app lifecycle, legacy APIs, WS session
 └── tests/
 ```

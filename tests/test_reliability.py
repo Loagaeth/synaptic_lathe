@@ -639,7 +639,10 @@ def test_task_schema_migration_preserves_existing_rows(tmp_path):
 
     asyncio.run(init_db(db_path))
     assert asyncio.run(get_task(str(db_path), "legacy-task"))["content"] == "work"
-    assert asyncio.run(update_task_status(str(db_path), "legacy-task", "ABANDONED"))
+    assert asyncio.run(get_task(str(db_path), "legacy-task"))["output_truncated"] == 0
+    assert asyncio.run(update_task_status(str(db_path), "legacy-task", "ABANDONED", output_truncated=True))
+    asyncio.run(init_db(db_path))
+    assert asyncio.run(get_task(str(db_path), "legacy-task"))["output_truncated"] == 1
 
 
 def test_task_schema_migration_adds_abandoned_to_cancelled_only_schema(tmp_path):

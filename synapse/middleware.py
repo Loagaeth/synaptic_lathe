@@ -180,7 +180,7 @@ async def security_headers_middleware(request: Request, call_next):
         "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'"
     )
     path = request.url.path
-    if path in {"/", "/admin", "/web"} or path.startswith("/web/"):
+    if path in {"/", "/admin", "/web", "/mcp", "/mcp/"} or path.startswith("/web/"):
         # The admin UI and its assets are deployed as one versioned unit. Stale
         # HTML or JavaScript can otherwise hide controls or call an incompatible API.
         response.headers["Cache-Control"] = "no-store, max-age=0"

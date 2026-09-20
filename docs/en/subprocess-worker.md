@@ -145,7 +145,7 @@ Only simple `{plan}`, `{profile}`, `{tool}`, `{session_id}`, `{session_alias}`, 
 
 A local `sessions` table maps aliases to real session IDs. Both `{session_id}` and `{session_alias}` pass through this allowlist; profiles without session placeholders ignore an extra alias. Raw IDs are denied by default; enabling them requires `allow_raw_session_id: true` and a bounded character-class `session_pattern` without groups or nested quantifiers. `allow_raw_session_id` and `advisory_safe` must be real YAML booleans (`true`/`false`); quoted values such as `"false"` are rejected to avoid ambiguous permission switches. Capability metadata contains alias names, not real values.
 
-`tags` contains at most eight public short labels. Set `advisory_safe: true` only when the local profile is already enforced read-only, non-interactive, and suitable for proposals/planning; Web auctions, team planning, and self-assessment filter on this field. The declaration does not change command privileges. Hermes/Reasonix remain `false` by default until their local permission behavior is verified.
+`tags` contains at most eight public short labels. Set `advisory_safe: true` only when the local profile is already enforced read-only, non-interactive, and suitable for proposals/planning; Web auctions and team planning filter on this field. The declaration does not change command privileges. Hermes/Reasonix remain `false` by default until their local permission behavior is verified.
 
 ## Approval and Interaction
 

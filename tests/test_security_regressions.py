@@ -425,6 +425,21 @@ def test_config_normalizes_cors_and_rejects_url_queries():
         MemoryConfig(embedding_api_url="https://example.test/v1#fragment")
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://user:private-marker@example.test",
+        "https://example.test?token=private-marker",
+        "https://example.test:private-marker",
+        "https://private-marker[\u2100]",
+    ],
+)
+def test_cors_validation_errors_do_not_echo_credentials(origin):
+    with pytest.raises(ValidationError) as error:
+        GlobalConfig(server={"cors_origins": [origin]})
+    assert "private-marker" not in str(error.value)
+
+
 def test_server_setup_rejects_empty_key_on_nonlocal_bind(tmp_path):
     from synapse.setup_wizard import SetupOptions, run_setup
 

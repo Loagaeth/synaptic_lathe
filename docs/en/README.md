@@ -14,3 +14,7 @@
 SynapticLathe is a single-process Agent message bus. The server handles authentication, routing, task state, SQLite context, and the web UI; local commands run only in separate workers. The Web UI can create/cancel human-originated tasks, show invocation counts, broadcast connectivity probes, and run human-gated auctions or team plans. Built-in integrations include a fixed-command worker, Profile Dispatcher, dedicated Codex CLI worker, and HTTP Agent adapter.
 
 中文文档: [../zh/README.md](../zh/README.md)
+
+## Capability Registry and Shared MCP
+
+See [Fabric/MCP](fabric.md) for the unified catalog, per-caller grants, shared task bus, explicit document sharing, and migration notes.

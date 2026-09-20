@@ -51,7 +51,7 @@ The current `worker_api_key` is a shared message-bus credential: a holder can re
 | `GET` | `/admin/tasks/stream` | SSE state events and bounded live fragments |
 | `GET` | `/admin/stats/agents` | Invocation counts by Agent/Profile/purpose/outcome |
 | `POST` | `/admin/agents/probe` | Broadcast/targeted WS probe without an LLM call |
-| `GET/POST` | `/admin/agent-tags`, `/admin/agent-tags/refresh` | Capability tags and read-only self-assessment |
+| `GET` | `/admin/capabilities` | Unified capability catalog and Agent compatibility view |
 | `GET` | `/admin/task-groups[/{id}]` | Auction/team task groups |
 | `POST` | `/admin/auctions`, `/admin/auctions/{id}/select` | Create auction and select a bid |
 | `POST` | `/admin/teams`, `/admin/teams/{id}/approve` | Create a team plan and approve assignments |
@@ -78,7 +78,7 @@ Auction selection example:
 }
 ```
 
-`/admin/agent-tags/refresh` is also an advisory task. Its bounded JSON result is stored as `self_reported`. Self-reported tags and bid claims are untrusted display data and never affect authentication, routing authorization, or command selection.
+The old `/admin/agent-tags*` endpoints were removed. Tags come from local Profile declarations, connection state is observed by the server, and MCP grants are independent policy. See [Fabric/MCP](fabric.md).
 
 ## WebSocket
 

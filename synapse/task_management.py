@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -36,7 +35,7 @@ async def list_tasks(
     profile: str = "",
     purpose: str = "",
     group_id: str = "",
-    source_kind: str = "",
+    managed_only: bool = False,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     values = (
@@ -50,8 +49,7 @@ async def list_tasks(
         purpose,
         group_id,
         group_id,
-        source_kind,
-        source_kind,
+        int(managed_only),
         max(1, min(limit, 500)),
     )
     async with get_db(db_path) as db:
@@ -63,7 +61,7 @@ async def list_tasks(
               AND (?='' OR profile=?)
               AND (?='' OR purpose=?)
               AND (?='' OR group_id=?)
-              AND (?='' OR source_kind=?)
+              AND (?=0 OR source_kind IN ('web', 'api'))
             ORDER BY created_at DESC
             LIMIT ?
             """,
@@ -284,101 +282,3 @@ async def list_task_groups(db_path: str, *, limit: int = 50) -> list[dict[str, A
             derived_status=derived,
         )
     return groups
-
-
-def _bounded_text_list(value: Any, *, item_limit: int, text_limit: int) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    result = []
-    for item in value[:item_limit]:
-        if not isinstance(item, str):
-            continue
-        text = " ".join(item.split())[:text_limit]
-        if text and text not in result:
-            result.append(text)
-    return result
-
-
-def parse_generated_tags(result: str) -> dict[str, list[str]] | None:
-    """Parse a small JSON capability claim; all values remain untrusted display data."""
-    if not isinstance(result, str) or len(result) > 100_000:
-        return None
-    candidate = result.strip()
-    if candidate.startswith("```"):
-        lines = candidate.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        candidate = "\n".join(lines).strip()
-    try:
-        data = json.loads(candidate)
-    except json.JSONDecodeError:
-        start = candidate.find("{")
-        end = candidate.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            data = json.loads(candidate[start : end + 1])
-        except json.JSONDecodeError:
-            return None
-    if not isinstance(data, dict):
-        return None
-    parsed = {
-        "tags": _bounded_text_list(data.get("tags"), item_limit=8, text_limit=32),
-        "strengths": _bounded_text_list(data.get("strengths"), item_limit=8, text_limit=160),
-        "limitations": _bounded_text_list(data.get("limitations"), item_limit=8, text_limit=160),
-        "suitable_tasks": _bounded_text_list(data.get("suitable_tasks"), item_limit=8, text_limit=160),
-    }
-    return parsed if parsed["tags"] else None
-
-
-async def store_generated_tags(
-    db_path: str,
-    *,
-    agent_name: str,
-    profile: str,
-    values: dict[str, list[str]],
-) -> None:
-    now = _utc_now()
-    async with get_db(db_path) as db:
-        await db.execute(
-            """
-            INSERT INTO agent_profile_tags (
-                agent_name, profile, tags_json, strengths_json, limitations_json,
-                suitable_tasks_json, source, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'self_reported', ?)
-            ON CONFLICT(agent_name, profile) DO UPDATE SET
-                tags_json=excluded.tags_json,
-                strengths_json=excluded.strengths_json,
-                limitations_json=excluded.limitations_json,
-                suitable_tasks_json=excluded.suitable_tasks_json,
-                source=excluded.source,
-                updated_at=excluded.updated_at
-            """,
-            (
-                agent_name,
-                profile,
-                json.dumps(values.get("tags", []), ensure_ascii=False),
-                json.dumps(values.get("strengths", []), ensure_ascii=False),
-                json.dumps(values.get("limitations", []), ensure_ascii=False),
-                json.dumps(values.get("suitable_tasks", []), ensure_ascii=False),
-                now,
-            ),
-        )
-        await db.commit()
-
-
-async def list_generated_tags(db_path: str) -> list[dict[str, Any]]:
-    async with get_db(db_path) as db:
-        cur = await db.execute("SELECT * FROM agent_profile_tags ORDER BY agent_name, profile")
-        rows = [dict(row) for row in await cur.fetchall()]
-    for row in rows:
-        for column in ("tags", "strengths", "limitations", "suitable_tasks"):
-            raw = row.pop(f"{column}_json", "[]")
-            try:
-                value = json.loads(raw)
-            except (TypeError, json.JSONDecodeError):
-                value = []
-            row[column] = value if isinstance(value, list) else []
-    return rows

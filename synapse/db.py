@@ -28,6 +28,7 @@ _TASK_ADDITIONAL_COLUMNS = {
     "cancel_reason": "TEXT NOT NULL DEFAULT ''",
     "started_at": "TEXT",
     "completed_at": "TEXT",
+    "output_truncated": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -164,19 +165,20 @@ async def _ensure_task_status_schema(db: aiosqlite.Connection) -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT,
                 started_at TEXT,
-                completed_at TEXT
+                completed_at TEXT,
+                output_truncated INTEGER NOT NULL DEFAULT 0
             );
             INSERT INTO tasks_new (
                 id, type, source_agent, target_agent, source_kind, purpose, title,
                 profile, session_alias, group_id, content, result, status, timeout,
                 connection_id, persona, cancel_reason, created_at, updated_at,
-                started_at, completed_at
+                started_at, completed_at, output_truncated
             )
             SELECT
                 id, type, source_agent, target_agent, source_kind, purpose, title,
                 profile, session_alias, group_id, content, result, status, timeout,
                 connection_id, persona, cancel_reason, created_at, updated_at,
-                started_at, completed_at
+                started_at, completed_at, output_truncated
             FROM tasks;
             DROP TABLE tasks;
             ALTER TABLE tasks_new RENAME TO tasks;
@@ -236,7 +238,8 @@ async def init_db(db_path: str | Path) -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT,
                 started_at TEXT,
-                completed_at TEXT
+                completed_at TEXT,
+                output_truncated INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS task_groups (
                 id TEXT PRIMARY KEY,
@@ -258,19 +261,6 @@ async def init_db(db_path: str | Path) -> None:
                 outcome TEXT NOT NULL,
                 count INTEGER NOT NULL DEFAULT 0 CHECK (count >= 0),
                 PRIMARY KEY (day, target_agent, profile, purpose, outcome)
-            );
-
-            CREATE TABLE IF NOT EXISTS agent_profile_tags (
-                agent_name TEXT NOT NULL,
-                profile TEXT NOT NULL,
-                tags_json TEXT NOT NULL DEFAULT '[]',
-                strengths_json TEXT NOT NULL DEFAULT '[]',
-                limitations_json TEXT NOT NULL DEFAULT '[]',
-                suitable_tasks_json TEXT NOT NULL DEFAULT '[]',
-                source TEXT NOT NULL DEFAULT 'configured',
-                updated_at TEXT NOT NULL,
-                expires_at TEXT,
-                PRIMARY KEY (agent_name, profile)
             );
 
             CREATE TABLE IF NOT EXISTS memories (
@@ -317,7 +307,7 @@ async def init_db(db_path: str | Path) -> None:
             await _ensure_task_columns(db)
             await _ensure_task_status_schema(db)
             await _ensure_task_indexes(db)
-            await db.execute("PRAGMA user_version = 7")
+            await db.execute("PRAGMA user_version = 8")
             await db.commit()
     except Exception as exc:
         raise RuntimeError(f"Failed to initialize database at {db_path}: {exc}") from exc

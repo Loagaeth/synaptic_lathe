@@ -15,7 +15,7 @@ _MAX_BODY_BYTES = 16 * 1024 * 1024
 class _StrictConfigModel(BaseModel):
     """Reject misspelled configuration keys instead of silently ignoring them."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 def _valid_bind_host(value: str) -> bool:
@@ -94,11 +94,11 @@ class ServerConfig(_StrictConfigModel):
     def validate_cors_origins(cls, origins: list[str]) -> list[str]:
         normalized: list[str] = []
         for origin in origins:
-            parsed = urlsplit(origin)
             try:
+                parsed = urlsplit(origin)
                 port = parsed.port
-            except ValueError as exc:
-                raise ValueError(f"Invalid CORS origin: {origin!r}") from exc
+            except ValueError:
+                raise ValueError("Invalid CORS origin URL or port") from None
             if (
                 origin == "*"
                 or parsed.scheme not in {"http", "https"}
@@ -109,7 +109,9 @@ class ServerConfig(_StrictConfigModel):
                 or parsed.fragment
                 or parsed.path not in {"", "/"}
             ):
-                raise ValueError(f"Invalid CORS origin: {origin!r}")
+                raise ValueError(
+                    "CORS origins must be HTTP(S) origins without credentials, paths, queries or fragments"
+                )
             host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname.lower()
             clean_origin = f"{parsed.scheme.lower()}://{host}"
             if port is not None:
@@ -181,12 +183,74 @@ class MemoryConfig(_StrictConfigModel):
         return value
 
 
+class FabricClient(_StrictConfigModel):
+    """An explicit MCP permission view, independent of Worker authentication."""
+
+    token: SecretStr
+    capabilities: list[str] = Field(default_factory=list, max_length=256)
+    submit_tasks: bool = False
+    resources: list[str] = Field(default_factory=list, max_length=256)
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, value: SecretStr) -> SecretStr:
+        token = value.get_secret_value()
+        if not 32 <= len(token) <= 512 or not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token):
+            raise ValueError("Fabric tokens must be 32 to 512 characters using HTTP Bearer token syntax")
+        return value
+
+    @field_validator("capabilities")
+    @classmethod
+    def validate_capabilities(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}(?:/[A-Za-z0-9_-]{1,64})?", value):
+                raise ValueError("Capabilities must be exact agent or agent/profile identifiers")
+        return list(dict.fromkeys(values))
+
+    @field_validator("resources")
+    @classmethod
+    def validate_resources(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not re.fullmatch(r"synapse://(?:skills|prompts|personas)/[A-Za-z0-9_.-]{1,128}", value):
+                raise ValueError("Resources must be exact synapse://skills|prompts|personas/name URIs")
+        return list(dict.fromkeys(values))
+
+
+class FabricConfig(_StrictConfigModel):
+    enabled: bool = False
+    clients: dict[str, FabricClient] = Field(default_factory=dict, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_clients(self) -> "FabricConfig":
+        if self.enabled and not self.clients:
+            raise ValueError("Enabled Fabric requires at least one authenticated client")
+        tokens = set()
+        for name, client in self.clients.items():
+            if not _AGENT_NAME_RE.fullmatch(name):
+                raise ValueError("Invalid Fabric client name")
+            token = client.token.get_secret_value()
+            if token in tokens:
+                raise ValueError("Each Fabric client must have a distinct token")
+            tokens.add(token)
+        return self
+
+
 class GlobalConfig(_StrictConfigModel):
     router: RouterConfig = Field(default_factory=RouterConfig)
     agents: dict[str, AgentConfig] = Field(default_factory=dict)
     server: ServerConfig = Field(default_factory=ServerConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    fabric: FabricConfig = Field(default_factory=FabricConfig)
     db_path: str = "data/synaptic_lathe.db"
+
+    @model_validator(mode="after")
+    def separate_fabric_tokens(self) -> "GlobalConfig":
+        if self.fabric.enabled and (not self.server.api_key.get_secret_value() or self.server.public_read_context):
+            raise ValueError("Fabric requires an administrator key and public_read_context: false")
+        privileged = {self.server.api_key.get_secret_value(), self.server.get_worker_api_key()}
+        if any(client.token.get_secret_value() in privileged for client in self.fabric.clients.values()):
+            raise ValueError("Fabric tokens must differ from administrator and Worker keys")
+        return self
 
     @field_validator("agents")
     @classmethod

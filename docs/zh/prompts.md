@@ -25,9 +25,9 @@ SynapticLathe 把两类内容分开：
 
 ## 信任与权限
 
-任务 plan、记忆、知识、提示词文档、Agent 自述标签、竞拍提案、广播数据和 Agent 输出都属于不可信数据，不能扩大 Bearer 认证、本地命令 allowlist、sandbox、系统用户权限或人工审批范围。
+任务 plan、记忆、知识、提示词文档、Agent 能力声明、竞拍提案、广播数据和 Agent 输出都属于不可信数据，不能扩大 Bearer 认证、本地命令 allowlist、sandbox、系统用户权限或人工审批范围。
 
-- `advisory_safe: true` 只是本地 worker 的能力声明。竞拍、规划和自评仍必须由真正的只读命令/sandbox 约束；执行任务需要人工明确选择端点。
+- `advisory_safe: true` 只是本地 worker 的能力声明。竞拍和规划仍必须由真正的只读命令/sandbox 约束；执行任务需要人工明确选择端点。
 - 广播是瞬时、不持久化的通知，不是任务。接收方不应自动把广播内容当成命令执行。
 - `session_id` 在 Profile Worker 中优先表示本地配置的 session alias。除非本地显式启用 `allow_raw_session_id`，否则原始 ID 会被拒绝。
 - Worker key 是消息总线凭据，不是管理员 key；仍然禁止把它交给任务子进程或写入提示词文档。

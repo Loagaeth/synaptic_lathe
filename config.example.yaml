@@ -72,4 +72,19 @@ memory:
   embedding_timeout: 20
   embedding_trust_env: false
 
+# 可选共享 MCP 控制层，安装 python -m pip install '.[mcp]' 后启用。
+# 每个调用方使用独立随机 token，不能复用 admin/worker key；默认不授予任何能力。
+# 启用前必须设置 server.api_key，关闭 public_read_context，
+# 并将实际访问地址加入 server.cors_origins（MCP 也验证 Host/Origin）。
+fabric:
+  enabled: false
+  clients: {}
+  # 用以下映射替换上面的 clients: {}，不要同时保留两个 clients 字段：
+  # clients:
+  #   planner:
+  #     token: "<generate-a-separate-random-token>"
+  #     capabilities: ["local-dispatcher/codex"]
+  #     submit_tasks: true
+  #     resources: ["synapse://prompts/team-guide"]
+
 db_path: "data/synaptic_lathe.db"

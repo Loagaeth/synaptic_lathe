@@ -29,9 +29,9 @@ from synapse.agent_catalog import (
     _available_agent_details,
     _build_default_skills,
     build_connection_prompt,
-    resolve_profile_defaults,
 )
 from synapse.banner import format_banner
+from synapse.capabilities import agent_snapshot, capability_records, resolve_profile_defaults
 from synapse.config import GlobalConfig, MemoryConfig
 from synapse.connection import connection_manager
 from synapse.context.knowledge import (
@@ -79,6 +79,7 @@ from synapse.handlers import handle_http_send, install_guide
 from synapse.http_utils import public_request_urls
 from synapse.logging import LOG_DIR, LOG_FILE_NAME, redact_sensitive_text, synapse_logger
 from synapse.marker import MarkerScanner
+from synapse.mcp_gateway import MCPGateway
 from synapse.middleware import (
     BodySizeLimitMiddleware,
     csrf_middleware,
@@ -100,8 +101,8 @@ from synapse.protocol import (
 from synapse.router import resolve_target, select_target
 from synapse.session import generate_correlation_id, generate_session_id
 from synapse.task_api import create_task_router
+from synapse.task_controller import TaskController
 from synapse.task_events import probe_coordinator, task_events
-from synapse.task_management import parse_generated_tags, store_generated_tags
 from synapse.task_queue import (
     TaskAlreadyExistsError,
     create_task,
@@ -115,7 +116,6 @@ from synapse.task_status import (
     TERMINAL_TASK_STATUSES,
 )
 from synapse.text_utils import sanitize_untrusted_text
-from synapse.web_task_controller import WebTaskController
 
 # ── 全局状态 ──────────────────────────────────
 
@@ -766,13 +766,14 @@ async def _complete_task_and_deliver(
         task_id,
         "COMPLETED",
         result=memory_result,
+        output_truncated=payload.get("output_truncated") is True,
         expected_statuses=COMPLETABLE_TASK_STATUSES,
     )
     await _cancel_timeout_watcher(task_id)
     if not completed:
         return
     source_kind = str(task.get("source_kind") or "agent")
-    if source_kind == "web":
+    if source_kind in {"web", "api"}:
         delivered = True
         await task_events.publish(
             {
@@ -785,15 +786,6 @@ async def _complete_task_and_deliver(
                 "purpose": task.get("purpose", "execute"),
             }
         )
-        if task.get("purpose") == "tag":
-            generated = parse_generated_tags(memory_result)
-            if generated:
-                await store_generated_tags(
-                    cfg.db_path,
-                    agent_name=str(task.get("target_agent") or ""),
-                    profile=str(task.get("profile") or ""),
-                    values=generated,
-                )
     else:
         delivered = await connection_manager.send_or_queue(
             source_agent,
@@ -872,7 +864,7 @@ async def _fail_tasks_targeting_disconnected_agent(cfg: GlobalConfig, agent_name
                 "task_id": task_id,
             },
         )
-        if task.get("source_kind") == "web":
+        if task.get("source_kind") in {"web", "api"}:
             await task_events.publish(
                 {
                     "event": "task_error",
@@ -923,7 +915,7 @@ async def _watch_task_timeout(
             return
         _schedule_auto_memory(cfg, task_id, "TIMEOUT")
         task = await get_task(cfg.db_path, task_id)
-        if task and task.get("source_kind") == "web":
+        if task and task.get("source_kind") in {"web", "api"}:
             await task_events.publish(
                 {
                     "event": "task_timeout",
@@ -1132,7 +1124,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_pending_cleanup_loop(), name="pending-cleanup"),
     ]
     try:
-        yield
+        async with _mcp_gateway.lifespan(app):
+            yield
     finally:
         timeout_watchers = [watcher for _, watcher in _timeout_tasks.values()]
         auto_memory_tasks = list(_auto_memory_tasks)
@@ -1397,7 +1390,7 @@ async def ws_endpoint(ws: WebSocket):
                 expected_statuses=COMPLETABLE_TASK_STATUSES,
             )
             await _cancel_timeout_watcher(cid)
-            if failed and current_task.get("source_kind") == "web":
+            if failed and current_task.get("source_kind") in {"web", "api"}:
                 await task_events.publish(
                     {
                         "event": "task_error",
@@ -1426,7 +1419,7 @@ async def ws_endpoint(ws: WebSocket):
         streamed_result_parts.append(content)
         streamed_result_bytes += encoded_size
         source = str(current_task.get("source_agent") or "")
-        if current_task.get("source_kind") == "web":
+        if current_task.get("source_kind") in {"web", "api"}:
             await task_events.publish(
                 {
                     "event": "task_chunk",
@@ -1817,7 +1810,7 @@ async def ws_endpoint(ws: WebSocket):
                 )
                 _timeout_tasks[cid] = (str(task.get("source_agent") or ""), execution_watcher)
                 reset_stream()
-                if task.get("source_kind") == "web":
+                if task.get("source_kind") in {"web", "api"}:
                     await task_events.publish(
                         {
                             "event": "task_executing",
@@ -1894,7 +1887,7 @@ async def ws_endpoint(ws: WebSocket):
                         expected_statuses=COMPLETABLE_TASK_STATUSES,
                     )
                     await _cancel_timeout_watcher(cid)
-                    if failed and task.get("source_kind") == "web":
+                    if failed and task.get("source_kind") in {"web", "api"}:
                         await task_events.publish(
                             {
                                 "event": "task_error",
@@ -2349,7 +2342,7 @@ def _register_api_v1_aliases() -> None:
 
 _register_api_v1_aliases()
 
-_web_task_controller = WebTaskController(
+_task_controller = TaskController(
     task_persona=_task_persona,
     bounded_timeout=_bounded_timeout,
     build_ws_message=_build_ws_message,
@@ -2357,20 +2350,29 @@ _web_task_controller = WebTaskController(
     pending_ttl_seconds=_pending_ttl_seconds,
     watch_task_timeout=_watch_task_timeout,
     cancel_timeout_watcher=_cancel_timeout_watcher,
-    available_agent_details=_available_agent_details,
     timeout_tasks=_timeout_tasks,
     http_tasks=_web_http_tasks,
 )
 _task_admin_router = create_task_router(
     verify_token,
-    dispatch_task=_web_task_controller.dispatch_task,
-    cancel_task=_web_task_controller.cancel_task,
-    probe_agents=_web_task_controller.probe_agents,
-    resolve_endpoint=_web_task_controller.resolve_endpoint,
-    agent_details=_web_task_controller.agent_details,
+    dispatch_task=_task_controller.dispatch_task,
+    cancel_task=_task_controller.cancel_task,
+    probe_agents=_task_controller.probe_agents,
+    resolve_endpoint=_task_controller.resolve_endpoint,
 )
 app.include_router(_task_admin_router)
 app.include_router(_task_admin_router, prefix=API_PREFIX)
+
+_mcp_gateway = MCPGateway(_task_controller)
+app.add_route("/mcp", _mcp_gateway, methods=["GET", "POST", "DELETE"])
+app.add_route("/mcp/", _mcp_gateway, methods=["GET", "POST", "DELETE"])
+
+
+@app.get("/admin/capabilities")
+@app.get(f"{API_PREFIX}/admin/capabilities")
+async def admin_capabilities(request: Request, _token: str = Depends(verify_token)):
+    config = request.app.state.config
+    return {"capabilities": capability_records(config), "agents": agent_snapshot(config)}
 
 
 # ── 服务器启动 ────────────────────────────────

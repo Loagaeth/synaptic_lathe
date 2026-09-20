@@ -39,7 +39,7 @@ Empty keys are allowed only when explicitly binding to `127.0.0.1`, `localhost`,
 ## Web Tasks and Multi-Agent Coordination
 
 - The browser uses administrator-authenticated HTTP/SSE and never registers as a synthetic Agent. Web results are not queued for a fake `web-console` connection. Static Web assets use a same-origin CSP and do not depend on `unsafe-inline` scripts or styles.
-- Bidding, team planning, and self-assessment only accept profiles declaring `advisory_safe: true`. This is a local capability declaration, not a sandbox. Fixed argv, OS user, workdir, and the tool's read-only mode remain the real enforcement boundary.
+- Bidding and team planning only accept profiles declaring `advisory_safe: true`. This is a local capability declaration, not a sandbox. Fixed argv, OS user, workdir, and the tool's read-only mode remain the real enforcement boundary.
 - Bid claims and capability tags are untrusted self-reported display data. Candidate counts, field counts, and text lengths are bounded; the UI HTML-escapes values; none of them affect authentication, authorization, or executable command mapping.
 - Team plans never fan out automatically. Execution tasks are created only after an administrator submits explicit assignments.
 - Group states derived from child tasks are persisted with compare-and-set. A stale GET/list request cannot overwrite a concurrent human selection, approval, or cancellation.

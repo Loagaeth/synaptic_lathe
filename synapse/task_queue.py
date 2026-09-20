@@ -9,8 +9,8 @@ from typing import Any
 from synapse.db import get_db
 from synapse.task_status import TASK_STATUSES, TERMINAL_TASK_STATUSES
 
-TASK_PURPOSES = frozenset(("execute", "bid", "plan", "review", "tag"))
-TASK_SOURCE_KINDS = frozenset(("agent", "web", "system"))
+TASK_PURPOSES = frozenset(("execute", "bid", "plan", "review"))
+TASK_SOURCE_KINDS = frozenset(("agent", "web", "api", "system"))
 
 
 class TaskAlreadyExistsError(ValueError):
@@ -140,6 +140,7 @@ async def update_task_status(
     status: str,
     *,
     result: str | None = None,
+    output_truncated: bool | None = None,
     expected_statuses: tuple[str, ...] | None = None,
 ) -> bool:
     """Compare-and-set one task state and record the first terminal outcome."""
@@ -175,6 +176,7 @@ async def update_task_status(
             SET status=?,
                 updated_at=?,
                 result=CASE WHEN ?=1 THEN ? ELSE result END,
+                output_truncated=COALESCE(?, output_truncated),
                 started_at=CASE WHEN ?=1 AND started_at IS NULL THEN ? ELSE started_at END,
                 completed_at=CASE WHEN ?=1 THEN ? ELSE completed_at END
             WHERE id=? AND status=?
@@ -184,6 +186,7 @@ async def update_task_status(
                 now,
                 int(result is not None),
                 result,
+                int(output_truncated) if output_truncated is not None else None,
                 int(status == "EXECUTING"),
                 now,
                 int(status in TERMINAL_TASK_STATUSES),

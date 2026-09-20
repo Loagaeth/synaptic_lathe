@@ -14,3 +14,7 @@
 SynapticLathe 是单进程 Agent 消息总线。服务端负责鉴权、路由、任务状态、SQLite 上下文和 Web 管理；本地命令只在独立 worker 中执行。Web 管理页可人工发布/中断任务、查看调用统计、广播探测连接，并以人工门控方式运行竞拍和团队分工。当前内置固定命令 worker、Profile Dispatcher、Codex CLI worker 和 HTTP Agent adapter。
 
 English docs: [../en/README.md](../en/README.md)
+
+## 统一能力与共享 MCP
+
+见 [Fabric/MCP](fabric.md)：统一目录、独立调用方权限、共用任务总线、显式共享文档及迁移说明。

@@ -145,7 +145,7 @@ SYNAPTIC_API_KEY='<worker-api-key>' synaptic-profile-worker \
 
 `sessions` 保存 alias 到真实 session id 的本地映射。`{session_id}` 和 `{session_alias}` 都会先经过该 allowlist；未使用 session 占位符的 profile 会忽略多余 alias。默认拒绝原始 session id；确需开放时同时设置 `allow_raw_session_id: true` 和无分组/无嵌套量词的字符类 `session_pattern`。`allow_raw_session_id` 与 `advisory_safe` 必须使用 YAML 真布尔值 `true/false`，写成字符串（例如 `"false"`）会被拒绝，避免权限开关歧义。能力上报只包含 alias 名，不包含真实值。
 
-`tags` 是最多 8 个公开短标签。`advisory_safe: true` 只应标在本地已强制只读、无人工审批且适合提案/规划的 Profile 上；Web 竞拍、团队规划和自评会据此筛选。该声明本身不会改变命令权限，错误标记可导致只读提案运行在可写工具中。Hermes/Reasonix 默认示例保持 `false`，直到用户在本机验证其权限行为。
+`tags` 是最多 8 个公开短标签。`advisory_safe: true` 只应标在本地已强制只读、无人工审批且适合提案/规划的 Profile 上；Web 竞拍、团队规划会据此筛选。该声明本身不会改变命令权限，错误标记可导致只读提案运行在可写工具中。Hermes/Reasonix 默认示例保持 `false`，直到用户在本机验证其权限行为。
 
 ## 审批和交互
 
